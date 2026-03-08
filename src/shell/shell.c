@@ -60,17 +60,23 @@ void shell_input(char c) {
         }
         // 5. test_malloc 명령어
         else if (strcmp(cmd_buf, "test_malloc") == 0) {
-            kprintf("\n");
-            char* str = (char*)kmalloc(32);
-            const char* msg = "Hello from kmalloc!";
-            int i = 0;
-            while(msg[i]) { str[i] = msg[i]; i++; }
-            str[i] = '\0';
+            int* p1 = kmalloc(sizeof(int));
+            int* p2 = kmalloc(sizeof(int));
+            int* p3 = kmalloc(sizeof(int));
 
-            kprintf("Allocated Addr: %x\n", (uint32_t)str);
-            kprintf("Data: %s\n", str);
-            kfree(str);
-            kprintf("Memory Freed.");
+            kprintf("p1: %x, p2: %x, p3: %x\n", p1, p2, p3);
+
+            (*p1) = 100;
+            (*p2) = 200;
+            (*p3) = 300;
+
+            kfree(p1);
+            kfree(p2);
+            kfree(p3);
+
+            void* p4 = kmalloc(250);
+            kprintf("p4 (after free): %x\n", p4);
+            kfree(p4);
         } else if (strcmp(cmd_buf, "panic") == 0) {
             kprintf("\nCrashing system intentionally...\n");
             // 0x1000000(16MB)은 우리가 매핑한 마지막 지점입니다.

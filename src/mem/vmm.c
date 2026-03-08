@@ -129,7 +129,7 @@ void init_vmm() {
         "mov %%eax, %%cr0\n\t"        // 페이징 활성화 발사!
 
         "jmp .Lflush\n"               // 파이프라인 정리 (Far Jump 역할)
-    ".Lflush:\n\t"
+        ".Lflush:\n\t"
         "mov %%cr3, %%eax\n\t"        // TLB(주소 캐시) 강제 무효화
         "mov %%eax, %%cr3\n\t"
 
@@ -139,7 +139,7 @@ void init_vmm() {
     );
 
     current_pd = boot_pd;
-    kprintf("[VMM] Pure ASM Paging ON! Address 0x0 is UNMAPPED.\n");
+    kprintf("[VMM] Initiated.\n");
 }
 
 // vmm.c 또는 kernel_status_manager.c

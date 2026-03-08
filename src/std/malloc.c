@@ -8,36 +8,30 @@
 #include "../mem/mem.h"
 #include "../vga.h"
 
-// 메모리 블록 헤더 구조체 (데이터 앞에 항상 붙어있음)
+// 메모리 블록 헤더 구조체
 typedef struct heap_block {
-    size_t size;             // 블록의 크기 (헤더 크기 제외)
-    uint8_t is_free;         // 1이면 사용 가능, 0이면 사용 중
-    struct heap_block* next; // 다음 블록을 가리키는 포인터
+    size_t size;
+    uint8_t is_free;
+    struct heap_block* next;
+    struct heap_block* prev; // 🌟 이중 연결 리스트용 포인터
 } heap_block_t;
 
 static heap_block_t* heap_start = NULL;
-static uint32_t heap_end_vaddr = 0; // 현재 힙이 매핑된 끝 가상 주소
+static uint32_t heap_end_vaddr = 0;
 
-// 4바이트 정렬 매크로 (메모리 접근 속도 최적화)
 #define ALIGN_4(size) (((size) + 3) & ~3)
 
 // ---------------------------------------------------------
 // 힙 초기화
 // ---------------------------------------------------------
-// malloc.c 수정 제안
 void init_heap(uint32_t start_vaddr, uint32_t initial_pages) {
     heap_start = (heap_block_t*)start_vaddr;
-
-    // 🌟 이미 vmm.c에서 0~16MB를 매핑했다면
-    // 여기서 vmm_map_page를 또 호출할 필요가 없습니다! (중복 매핑 방지)
-    // 만약 16MB 밖을 쓰고 싶다면 여기서 매핑하되, vmm_map_page가 가상 주소를 쓰도록 고쳐야 합니다.
-
     heap_end_vaddr = start_vaddr + (initial_pages * PAGE_SIZE);
 
-    // 첫 블록 설정
     heap_start->size = (initial_pages * PAGE_SIZE) - sizeof(heap_block_t);
     heap_start->is_free = 1;
     heap_start->next = NULL;
+    heap_start->prev = NULL; // 🌟 첫 블록의 이전은 없음
 
     kprintf("[malloc] Heap Initialized at %x\n", start_vaddr);
 }
@@ -48,102 +42,94 @@ void init_heap(uint32_t start_vaddr, uint32_t initial_pages) {
 void* kmalloc(size_t size) {
     if (size == 0) return NULL;
 
-    size = ALIGN_4(size); // 4바이트 배수로 크기 맞춤
+    size = ALIGN_4(size);
     heap_block_t* current = heap_start;
     heap_block_t* last = NULL;
 
-    // 1. First-Fit: 앞에서부터 빈 공간 찾기
     while (current != NULL) {
         if (current->is_free && current->size >= size) {
-            // 빈 공간을 찾았는데, 크기가 너무 크면 쪼개기 (Splitting)
+            // 블록 쪼개기 (Splitting)
             if (current->size >= size + sizeof(heap_block_t) + 4) {
                 heap_block_t* new_block = (heap_block_t*)((uint8_t*)current + sizeof(heap_block_t) + size);
                 new_block->size = current->size - size - sizeof(heap_block_t);
                 new_block->is_free = 1;
+
+                // 🌟 링크 재설정 (next와 prev 모두)
                 new_block->next = current->next;
+                new_block->prev = current;
+
+                if (new_block->next) {
+                    new_block->next->prev = new_block;
+                }
 
                 current->size = size;
                 current->next = new_block;
             }
 
             current->is_free = 0;
-            // 헤더 바로 다음 주소를 반환
             return (void*)((uint8_t*)current + sizeof(heap_block_t));
         }
         last = current;
         current = current->next;
     }
 
-    // 2. 빈 공간이 없으면 힙 영역 확장 (Heap Expansion)
-    // PMM에서 새 물리 페이지를 받아와서 현재 힙 끝(가상 주소)에 매핑
+    // 빈 공간이 없으면 확장
     void* new_phys = pmm_alloc_page();
-    if (!new_phys) return NULL; // 진짜 메모리 부족
+    if (!new_phys) return NULL;
 
     vmm_map_page(heap_end_vaddr, (uint32_t)new_phys, PAGE_RW);
 
-    // 새 블록 생성
     heap_block_t* expanded_block = (heap_block_t*)heap_end_vaddr;
     expanded_block->size = PAGE_SIZE - sizeof(heap_block_t);
     expanded_block->is_free = 1;
     expanded_block->next = NULL;
+    expanded_block->prev = last; // 🌟 새로 추가된 블록의 이전은 기존 마지막 블록
 
     if (last) last->next = expanded_block;
     heap_end_vaddr += PAGE_SIZE;
 
-    // 확장했으니 다시 malloc 호출 (재귀)
     return kmalloc(size);
 }
 
 // ---------------------------------------------------------
-// kfree: 메모리 해제 및 병합
+// kfree: 메모리 해제 및 즉시 병합 (O(1))
 // ---------------------------------------------------------
 void kfree(void* ptr) {
     if (!ptr) return;
 
-    // 데이터 포인터에서 헤더 크기만큼 앞으로 가면 관리 블록이 나옴
     heap_block_t* block = (heap_block_t*)((uint8_t*)ptr - sizeof(heap_block_t));
     block->is_free = 1;
 
-    // 병합 (Coalescing): 파편화(Fragmentation) 방지
-    // 현재 블록과 다음 블록이 모두 비어있으면 하나로 합침
-    heap_block_t* current = heap_start;
-    while (current != NULL) {
-        if (current->is_free && current->next != NULL && current->next->is_free) {
-            current->size += sizeof(heap_block_t) + current->next->size;
-            current->next = current->next->next;
-        }
-        current = current->next;
+    // 1. 다음 블록이 비어있으면 합침
+    if (block->next && block->next->is_free) {
+        block->size += sizeof(heap_block_t) + block->next->size;
+        block->next = block->next->next;
+        if (block->next) block->next->prev = block;
+    }
+
+    // 2. 이전 블록이 비어있으면 합침
+    if (block->prev && block->prev->is_free) {
+        block->prev->size += sizeof(heap_block_t) + block->size;
+        block->prev->next = block->next;
+        if (block->next) block->next->prev = block->prev;
     }
 }
 
-// ---------------------------------------------------------
-// kcalloc: 할당 후 0으로 초기화
-// ---------------------------------------------------------
+// kcalloc, krealloc은 기존 코드 그대로 유지
 void* kcalloc(size_t num, size_t size) {
     size_t total = num * size;
     void* ptr = kmalloc(total);
-    if (ptr) {
-        memset(ptr, 0, total);
-    }
+    if (ptr) memset(ptr, 0, total);
     return ptr;
 }
 
-// ---------------------------------------------------------
-// krealloc: 크기 재조정
-// ---------------------------------------------------------
 void* krealloc(void* ptr, size_t size) {
-    if (size == 0) {
-        kfree(ptr);
-        return NULL;
-    }
+    if (size == 0) { kfree(ptr); return NULL; }
     if (!ptr) return kmalloc(size);
 
     heap_block_t* block = (heap_block_t*)((uint8_t*)ptr - sizeof(heap_block_t));
-    if (block->size >= size) {
-        return ptr; // 이미 충분히 크면 그대로 반환
-    }
+    if (block->size >= size) return ptr;
 
-    // 새 공간 할당, 기존 데이터 복사, 기존 공간 해제
     void* new_ptr = kmalloc(size);
     if (new_ptr) {
         memcpy(new_ptr, ptr, block->size);

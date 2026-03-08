@@ -7,6 +7,7 @@
 #include "../io.h"
 #include "../vga.h"
 #include "../drivers/serial.h"
+#include "../util/util.h"
 
 volatile uint32_t tick = 0;
 
@@ -15,7 +16,7 @@ void timer_handler_main(registers_t* regs) {
     (void)regs;
     tick++;
     //kprintf_serial("tick: %d\n", tick);
-    outb(0x20, 0x20); // 인터럽트 끝
+    eoi();
 }
 
 void init_timer(uint32_t frequency) {
