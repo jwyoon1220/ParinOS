@@ -24,7 +24,7 @@ _start:
     mov si, MSG_LOAD
     call print_string
 
-    ; --- 🌟 2. BIOS E820 메모리 맵 수집 ---
+    ; --- 2. BIOS E820 메모리 맵 수집 ---
     mov di, 0x8004
     xor ebx, ebx
     xor bp, bp

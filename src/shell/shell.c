@@ -7,6 +7,7 @@
 #include "../mem/pmm.h"
 #include "../std/malloc.h"
 #include "../drivers/timer.h"
+#include "../drivers/rtc.h"
 
 // 🌟 1. 배열 대신 포인터로 변경 (kmalloc을 받기 위함)
 char* cmd_buf = NULL;
@@ -106,6 +107,16 @@ void shell_input(char c) {
         } else if (strncmp(cmd_buf, "echo ", 5) == 0) {
             char* message = cmd_buf + 5;
             kprintf("%s\n", message);
+        } else if (strcmp(cmd_buf, "date") == 0) {
+            rtc_time_t* time = kmalloc(sizeof(rtc_time_t));
+            read_rtc(time);
+            kprintf("%s %d, %d\n", get_month_name(time->month), time->day, time->year);
+            kfree(time);
+        } else if (strcmp(cmd_buf, "time") == 0) {
+            rtc_time_t* time = kmalloc(sizeof(rtc_time_t));
+            read_rtc(time);
+            kprintf("%d:%d:%d\n", time->hour, time->minute, time->second);
+            kfree(time);
         } else if (cmd_idx > 0) {
             kprintf("\nUnknown command: %s", cmd_buf);
         }

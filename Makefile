@@ -57,7 +57,7 @@ run:
 	$(MAKE) clean
 	$(MAKE) all
 	clear
-	qemu-system-i386 -drive format=raw,file=$(IMAGE) -serial stdio -serial file:serial.log
+	qemu-system-i386 -drive format=raw,file=$(IMAGE) -rtc base=localtime -serial stdio -serial file:serial.log
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -31,7 +31,7 @@ void init_heap(uint32_t start_vaddr, uint32_t initial_pages) {
     heap_start->size = (initial_pages * PAGE_SIZE) - sizeof(heap_block_t);
     heap_start->is_free = 1;
     heap_start->next = NULL;
-    heap_start->prev = NULL; // 🌟 첫 블록의 이전은 없음
+    heap_start->prev = NULL; // 첫 블록의 이전은 없음
 
     kprintf("[malloc] Heap Initialized at %x\n", start_vaddr);
 }
@@ -54,7 +54,7 @@ void* kmalloc(size_t size) {
                 new_block->size = current->size - size - sizeof(heap_block_t);
                 new_block->is_free = 1;
 
-                // 🌟 링크 재설정 (next와 prev 모두)
+                // 링크 재설정 (next와 prev 모두)
                 new_block->next = current->next;
                 new_block->prev = current;
 
@@ -83,7 +83,7 @@ void* kmalloc(size_t size) {
     expanded_block->size = PAGE_SIZE - sizeof(heap_block_t);
     expanded_block->is_free = 1;
     expanded_block->next = NULL;
-    expanded_block->prev = last; // 🌟 새로 추가된 블록의 이전은 기존 마지막 블록
+    expanded_block->prev = last; // 새로 추가된 블록의 이전은 기존 마지막 블록
 
     if (last) last->next = expanded_block;
     heap_end_vaddr += PAGE_SIZE;
@@ -92,7 +92,7 @@ void* kmalloc(size_t size) {
 }
 
 // ---------------------------------------------------------
-// kfree: 메모리 해제 및 즉시 병합 (O(1))
+// kfree: 메모리 해제 및 즉시 병합
 // ---------------------------------------------------------
 void kfree(void* ptr) {
     if (!ptr) return;
@@ -115,7 +115,6 @@ void kfree(void* ptr) {
     }
 }
 
-// kcalloc, krealloc은 기존 코드 그대로 유지
 void* kcalloc(size_t num, size_t size) {
     size_t total = num * size;
     void* ptr = kmalloc(total);

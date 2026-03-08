@@ -11,7 +11,6 @@
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
-
 void kmain() {
     vga_clear();
 
@@ -22,7 +21,7 @@ void kmain() {
 
     init_serial();
 
-    init_pmm(megaOf(512));
+    init_pmm();
     init_vmm();
     init_heap(0x800000, 10);
 
