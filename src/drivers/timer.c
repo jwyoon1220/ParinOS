@@ -34,3 +34,14 @@ void sleep(uint32_t ms) {
         __asm__ __volatile__("hlt");
     }
 }
+
+/**
+ * 시스템 부팅 후 발생한 총 타이머 틱(ms)을 반환합니다.
+ */
+uint32_t get_total_ticks() {
+    uint32_t res;
+    asm volatile("cli");    // 인터럽트 금지 (값 보호)
+    res = tick;
+    asm volatile("sti");    // 인터럽트 허용
+    return res;
+}

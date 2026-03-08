@@ -1,138 +1,128 @@
 #include "shell.h"
-
-#include <stdio.h>
-
 #include "../std/string.h"
 #include "../vga.h"
 #include "../mem/pmm.h"
 #include "../std/malloc.h"
 #include "../drivers/timer.h"
 #include "../drivers/rtc.h"
+#include "../mem/mem.h"
 
-// 🌟 1. 배열 대신 포인터로 변경 (kmalloc을 받기 위함)
 char* cmd_buf = NULL;
 int cmd_idx = 0;
 
-// 셸 초기 상태 출력
-void shell_init() {
-    // 🌟 2. 최초 실행 시에만 버퍼를 동적 할당 (128바이트)
-    if (cmd_buf == NULL) {
-        cmd_buf = (char*)kmalloc(128);
-    }
+// --- 명령어 처리 함수들 ---
 
-    // 🌟 3. 인덱스와 버퍼를 확실하게 초기화 (쓰레기값 방지)
-    cmd_idx = 0;
-    if (cmd_buf != NULL) {
-        for(int i = 0; i < 128; i++) {
-            cmd_buf[i] = '\0';
-        }
-    }
-
-    kprintf("\n\nParinOS Shell v1.0 (March 2026)\n");
-    kprintf("Type 'help' for a list of commands.\n");
-    kprintf("\nParinOS> ");
+static void cmd_help() {
+    kprintf("\nAvailable commands: help, md, clear, date, time, free, uptime, panic, echo");
 }
 
-// 셸 입력 처리 핵심 로직
+static void cmd_clear() {
+    vga_clear();
+}
+
+static void cmd_md() {
+    // "md 0x800000" 형태에서 주소 부분 추출
+    uint32_t addr = atoi_hex(cmd_buf + 3);
+    dump_memory(addr, 8);
+}
+
+static void cmd_date() {
+    rtc_time_t now; // 굳이 kmalloc 하지 않고 스택 사용
+    read_rtc(&now);
+    kprintf("%s %d, %d\n", get_month_name(now.month), now.day, now.year);
+}
+
+static void cmd_time() {
+    rtc_time_t now;
+    read_rtc(&now);
+    kprintf("%d:%d:%d\n", now.hour, now.minute, now.second);
+}
+
+static void cmd_free() {
+    // malloc.c에 구현할 함수 호출
+    dump_heap_stat();
+}
+
+static void cmd_uptime() {
+    uint32_t t = get_total_ticks(); // timer.c에서 구현된 틱 값
+    uint32_t sec = t / 1000;
+    uint32_t min = sec / 60;
+    uint32_t hour = min / 60;
+    kprintf("Uptime: %d hours, %d minutes, %d seconds\n", hour, min % 60, sec % 60);
+}
+
+static void cmd_panic() {
+    kprintf("\nCrashing system intentionally...\n");
+    volatile uint32_t *bad_ptr = (uint32_t*)0x4000000;
+    *bad_ptr = 0x1234;
+}
+
+static void cmd_cpuinfo() {
+    uint32_t eax, ebx, ecx, edx;
+    char vendor[13];
+
+    // CPU 제조사 문자열 가져오기 (EAX=0)
+    asm volatile("cpuid" : "=b"(ebx), "=d"(edx), "=c"(ecx) : "a"(0));
+
+    // EBX, EDX, ECX 순서로 문자열이 들어옵니다.
+    memcpy(vendor, &ebx, 4);
+    memcpy(vendor + 4, &edx, 4);
+    memcpy(vendor + 8, &ecx, 4);
+    vendor[12] = '\0';
+
+    kprintf("CPU Vendor: %s\n", vendor);
+}
+
+// --- 메인 셸 로직 ---
+
+void shell_init() {
+    if (cmd_buf == NULL) cmd_buf = (char*)kmalloc(128);
+    cmd_idx = 0;
+    memset(cmd_buf, 0, 128);
+
+    kprintf("\nParinOS Kernel Shell\n");
+    kprintf("ParinOS> ");
+}
+
+void process_command() {
+    kputchar('\n');
+    cmd_buf[cmd_idx] = '\0';
+
+    if (cmd_idx == 0) return;
+
+    // 🌟 이 부분을 함수별로 분리
+    if (strcmp(cmd_buf, "help") == 0)          cmd_help();
+    else if (strcmp(cmd_buf, "clear") == 0)   cmd_clear();
+    else if (strncmp(cmd_buf, "md ", 3) == 0) cmd_md();
+    else if (strcmp(cmd_buf, "date") == 0)    cmd_date();
+    else if (strcmp(cmd_buf, "time") == 0)    cmd_time();
+    else if (strcmp(cmd_buf, "free") == 0)    cmd_free();
+    else if (strcmp(cmd_buf, "uptime") == 0)  cmd_uptime();
+    else if (strcmp(cmd_buf, "panic") == 0)   cmd_panic();
+    else if (strcmp(cmd_buf, "cpuinfo") == 0) cmd_cpuinfo();
+    else if (strncmp(cmd_buf, "echo ", 5) == 0) {
+        kprintf("%s\n", cmd_buf + 5);
+    }
+    else {
+        kprintf("Unknown command: %s\n", cmd_buf);
+    }
+
+    cmd_idx = 0;
+    memset(cmd_buf, 0, 128);
+    kprintf("ParinOS> ");
+}
+
 void shell_input(char c) {
-    // 방어 코드: 버퍼 할당 실패 시 작동 중지
     if (cmd_buf == NULL) return;
 
     if (c == '\n') {
-        kputchar('\n');
-        cmd_buf[cmd_idx] = '\0'; // 문자열 끝 널 문자 삽입
-
-        // 1. md (Memory Dump) 명령어
-        if (strncmp(cmd_buf, "md ", 3) == 0) {
-            uint32_t addr = atoi_hex(cmd_buf + 3);
-            dump_memory(addr, 8);
-        }
-        // 🌟 2. help 명령어 (복붙 실수 수정!)
-        else if (strcmp(cmd_buf, "help") == 0) {
-            kprintf("\nAvailable commands: help, md, clear, shell, test_malloc");
-        }
-        // 3. clear 명령어
-        else if (strcmp(cmd_buf, "clear") == 0) {
-            vga_clear();
-        }
-        // 4. shell 명령어
-        else if (strcmp(cmd_buf, "shell") == 0) {
-            shell_init();
-        }
-        // 5. test_malloc 명령어
-        else if (strcmp(cmd_buf, "test_malloc") == 0) {
-            int* p1 = kmalloc(sizeof(int));
-            int* p2 = kmalloc(sizeof(int));
-            int* p3 = kmalloc(sizeof(int));
-
-            kprintf("p1: %x, p2: %x, p3: %x\n", p1, p2, p3);
-
-            (*p1) = 100;
-            (*p2) = 200;
-            (*p3) = 300;
-
-            kfree(p1);
-            kfree(p2);
-            kfree(p3);
-
-            void* p4 = kmalloc(250);
-            kprintf("p4 (after free): %x\n", p4);
-            kfree(p4);
-        } else if (strcmp(cmd_buf, "panic") == 0) {
-            kprintf("\nCrashing system intentionally...\n");
-            // 0x1000000(16MB)은 우리가 매핑한 마지막 지점입니다.
-            // 그보다 살짝 높은 0x1100000을 건드려 봅시다.
-            volatile uint32_t *bad_ptr = (uint32_t*)0x4000000;
-            *bad_ptr = 0x1234;
-            kprintf("If you see this, panic failed!\n");
-        } else if (strncmp(cmd_buf, "delayd_echo ", 12) == 0) {
-            // "delayd_echo Hello" -> "Hello" 부분만 추출
-            char* message = cmd_buf + 12;
-
-            kprintf("Preparing to echo in 3 seconds...\n");
-
-            // 1. 카운트다운 효과 (XP 감성)
-            for (int i = 3; i > 0; i--) {
-                kprintf("%d... ", i);
-                sleep(1000); // 1초 대기
-            }
-            kprintf("GO!\n\n");
-
-            // 2. 타이핑 효과 (한 글자씩 출력)
-            for (int i = 0; message[i] != '\0'; i++) {
-                kputchar(message[i]);
-                sleep(100); // 0.1초마다 한 글자씩 (타이핑 느낌)
-            }
-            kputchar('\n');
-        } else if (strncmp(cmd_buf, "echo ", 5) == 0) {
-            char* message = cmd_buf + 5;
-            kprintf("%s\n", message);
-        } else if (strcmp(cmd_buf, "date") == 0) {
-            rtc_time_t* time = kmalloc(sizeof(rtc_time_t));
-            read_rtc(time);
-            kprintf("%s %d, %d\n", get_month_name(time->month), time->day, time->year);
-            kfree(time);
-        } else if (strcmp(cmd_buf, "time") == 0) {
-            rtc_time_t* time = kmalloc(sizeof(rtc_time_t));
-            read_rtc(time);
-            kprintf("%d:%d:%d\n", time->hour, time->minute, time->second);
-            kfree(time);
-        } else if (cmd_idx > 0) {
-            kprintf("\nUnknown command: %s", cmd_buf);
-        }
-
-        // 프롬프트 재출력
-        cmd_idx = 0;
-        kprint("\nParinOS> ");
-
+        process_command();
     } else if (c == '\b') {
-        // 백스페이스 처리
         if (cmd_idx > 0) {
             cmd_idx--;
             kputchar('\b');
         }
     } else if (cmd_idx < 127) {
-        // 일반 문자 입력
         cmd_buf[cmd_idx++] = c;
         kputchar(c);
     }

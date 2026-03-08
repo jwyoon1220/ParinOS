@@ -136,3 +136,27 @@ void* krealloc(void* ptr, size_t size) {
     }
     return new_ptr;
 }
+
+void dump_heap_stat() {
+    heap_block_t* current = heap_start;
+    size_t free_mem = 0;
+    size_t used_mem = 0;
+    int block_count = 0;
+
+    while (current != NULL) {
+        if (current->is_free) {
+            free_mem += current->size;
+        } else {
+            used_mem += current->size;
+        }
+        block_count++;
+        current = current->next;
+    }
+
+    kprintf("--- Memory Usage ---\n");
+    kprintf("Total Heap: %d KB\n", (free_mem + used_mem) / 1024);
+    kprintf("Used: %d KB (%d bytes)\n", used_mem / 1024, used_mem);
+    kprintf("Free: %d KB (%d bytes)\n", free_mem / 1024, free_mem);
+    kprintf("Total Blocks: %d\n", block_count);
+    kprintf("--------------------\n");
+}
