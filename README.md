@@ -10,8 +10,7 @@
 - **GDT/IDT 설정**: 시스템 보호 모드 진입 및 인터럽트 체계 구축.
 - **VGA 드라이버**: `kprintf` 및 `Screen Clear` 등 텍스트 모드 출력 환경 완비.
 - **PIT(Programmable Interval Timer)**: 1000Hz 주기의 정밀 타이머 구현.
-- **파이썬 자동화 스크립트**: 소스 코드 전체에 `extern "C"` 및 표준 `#ifdef __cplusplus` 가드 자동 삽입 도구 제작.
-
+- 
 ### 2. 메모리 관리 시스템 (Memory Management)
 - **PMM (Physical Memory Manager)**: 비트맵 기반 물리 프레임 할당자 구현.
 - **VMM (Virtual Memory Manager)**: 페이징(Paging) 기법을 통한 4GB 가상 주소 공간 매핑.
