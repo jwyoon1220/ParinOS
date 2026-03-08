@@ -54,3 +54,9 @@
     - **Directory Entry** 관리: 파일 이름, 확장자, 크기, 생성 시간 등 메타데이터 처리.
 - [ ] **VFS(Virtual File System) 추상화**: 하드디스크, 램디스크 등 서로 다른 저장 매체를 `open()`, `read()`, `write()` 같은 통일된 인터페이스로 접근하도록 설계.
 ---
+
+## 개발 환경
+- [ ] **C17**
+- [ ] **i686-linux-gnu-gcc**
+- [ ] **i686-linux-gnu-ld**
+- [ ] **nasm**(https://nasm.us)
