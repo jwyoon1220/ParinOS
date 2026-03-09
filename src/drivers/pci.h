@@ -94,5 +94,4 @@ void pci_enable_device(pci_device_t* device);
 
 extern pci_device_t pci_devices[256];
 extern uint32_t pci_device_count;
-
 #endif //PARINOS_PCI_H

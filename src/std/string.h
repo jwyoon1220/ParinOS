@@ -5,6 +5,7 @@
 #ifndef PARINOS_STRING_H
 #define PARINOS_STRING_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* 문자열 비교 함수 */
@@ -18,8 +19,12 @@ int strlen(const char *s);
 char* strcat(char *dest, const char *src);
 char* strncat(char *dest, const char *src, int n);
 
+char* strcpy(char* dest, const char* src);
 
 char* strchr(const char *s, int c);
 uint32_t atoi_hex(const char *s);
+
+// 새로 추가
+int snprintf(char* buffer, size_t size, const char* format, ...);
 
 #endif //PARINOS_STRING_H

@@ -8,6 +8,10 @@
 #include "../mem/mem.h"
 #include "../vga.h"
 
+
+// 만약 매핑 시 Present와 RW를 동시에 주려면 (0x01 | 0x02 = 0x03)
+#define PAGE_STANDARD (PAGE_PRESENT | PAGE_RW)
+
 // 메모리 블록 헤더 구조체
 typedef struct heap_block {
     size_t size;

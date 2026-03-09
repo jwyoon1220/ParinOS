@@ -305,10 +305,14 @@ typedef enum {
 
 // AHCI 장치 정보
 typedef struct {
-    hba_mem_t* hba_mem;
     hba_port_t* port;
+    hba_mem_t* hba_mem;
     uint8_t port_num;
     ahci_device_type_t type;
+
+    // 추가된 부분: 디스크의 총 섹터 수 저장
+    uint64_t total_sectors;
+
     uint8_t* cmd_list;
     uint8_t* fis_base;
     uint8_t* cmd_tables[32];
@@ -324,5 +328,7 @@ void ahci_start_cmd(hba_port_t* port);
 void ahci_stop_cmd(hba_port_t* port);
 int ahci_find_cmdslot(hba_port_t* port);
 void ahci_list_devices(void);
+uint32_t ahci_get_device_count(void);
+ahci_device_t* ahci_get_device(uint32_t index);
 
 #endif //PARINOS_AHCI_H

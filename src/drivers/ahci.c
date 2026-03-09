@@ -97,11 +97,12 @@ static int ahci_init_port(hba_port_t* port, uint8_t port_num) {
     device->port = port;
     device->port_num = port_num;
     device->type = type;
+    device->total_sectors = 0; // 초기화
 
-    // 포트 중지
+    // 1. 포트 명령어 처리 중지 (설정 변경을 위해)
     ahci_stop_cmd(port);
 
-    // 명령어 목록 메모리 할당 (1KB 정렬)
+    // 2. 명령어 목록(Command List) 메모리 할당 (1KB 정렬 필요)
     uint32_t cmd_list_phys = (uint32_t)pmm_alloc_frame();
     if (cmd_list_phys == 0) {
         kprintf("[AHCI] Failed to allocate command list\n");
@@ -110,7 +111,7 @@ static int ahci_init_port(hba_port_t* port, uint8_t port_num) {
     device->cmd_list = (uint8_t*)cmd_list_phys;
     memset(device->cmd_list, 0, 4096);
 
-    // FIS 베이스 메모리 할당 (256바이트 정렬)
+    // 3. FIS 수신 베이스 메모리 할당 (256바이트 정렬 필요)
     uint32_t fis_base_phys = (uint32_t)pmm_alloc_frame();
     if (fis_base_phys == 0) {
         kprintf("[AHCI] Failed to allocate FIS base\n");
@@ -120,16 +121,16 @@ static int ahci_init_port(hba_port_t* port, uint8_t port_num) {
     device->fis_base = (uint8_t*)fis_base_phys;
     memset(device->fis_base, 0, 4096);
 
-    // 포트 설정
+    // 4. HBA 포트 레지스터에 주소 설정
     port->clb = cmd_list_phys;
     port->clbu = 0;
     port->fb = fis_base_phys;
     port->fbu = 0;
 
-    // 명령어 테이블 할당
+    // 5. 명령어 테이블(Command Table) 할당 (각 슬롯당 하나씩)
     hba_cmd_header_t* cmd_header = (hba_cmd_header_t*)device->cmd_list;
     for (int i = 0; i < 32; i++) {
-        cmd_header[i].prdtl = 8; // 8 PRD entries per command table
+        cmd_header[i].prdtl = 8; // PRDT 엔트리 개수
         uint32_t cmd_tbl_phys = (uint32_t)pmm_alloc_frame();
         if (cmd_tbl_phys == 0) {
             kprintf("[AHCI] Failed to allocate command table %d\n", i);
@@ -142,13 +143,38 @@ static int ahci_init_port(hba_port_t* port, uint8_t port_num) {
         cmd_header[i].ctbau = 0;
     }
 
-    // 포트 시작
+    // 6. 포트 명령어 처리 다시 시작
     ahci_start_cmd(port);
+
+    // 7. [핵심] IDENTIFY 명령으로 장치 상세 정보 및 용량 가져오기
+    uint16_t* identify_buf = (uint16_t*)pmm_alloc_frame();
+    if (identify_buf) {
+        memset(identify_buf, 0, 4096);
+        if (ahci_identify(device, identify_buf)) {
+            // LBA28 섹터 수 (Word 60-61)
+            uint32_t sectors_lba28 = *((uint32_t*)&identify_buf[60]);
+
+            // LBA48 지원 여부 확인 (Word 83의 비트 10)
+            if (identify_buf[83] & (1 << 10)) {
+                // LBA48 섹터 수 (Word 100-103, 64비트)
+                device->total_sectors = *((uint64_t*)&identify_buf[100]);
+            } else {
+                device->total_sectors = (uint64_t)sectors_lba28;
+            }
+
+            kprintf("[AHCI] Port %d: Detected %d sectors (%d MB)\n",
+                   port_num,
+                   (uint32_t)device->total_sectors,
+                   (uint32_t)(device->total_sectors * 512 / 1024 / 1024));
+        }
+        pmm_free_frame(identify_buf);
+    }
 
     ahci_device_count++;
 
+    // 8. 로그 출력
     const char* type_name;
-    switch (type) {
+    switch (device->type) {
         case AHCI_DEV_SATA:   type_name = "SATA"; break;
         case AHCI_DEV_SATAPI: type_name = "SATAPI"; break;
         case AHCI_DEV_SEMB:   type_name = "SEMB"; break;
@@ -336,22 +362,29 @@ int ahci_identify(ahci_device_t* device, void* buffer) {
 // AHCI 장치 목록 출력
 void ahci_list_devices(void) {
     kprintf("\n=== AHCI Device List ===\n");
-    kprintf("Port Type   Signature\n");
-    kprintf("---- ------ ----------\n");
+    kprintf("Port Type    Sectors   Size(MB)  Signature\n");
+    kprintf("---- ------- --------- --------- ----------\n");
 
     for (uint32_t i = 0; i < ahci_device_count; i++) {
         ahci_device_t* device = &ahci_devices[i];
 
         const char* type_name;
         switch (device->type) {
-            case AHCI_DEV_SATA:   type_name = "SATA  "; break;
-            case AHCI_DEV_SATAPI: type_name = "SATAPI"; break;
-            case AHCI_DEV_SEMB:   type_name = "SEMB  "; break;
-            case AHCI_DEV_PM:     type_name = "PM    "; break;
+            case AHCI_DEV_SATA:   type_name = "SATA   "; break;
+            case AHCI_DEV_SATAPI: type_name = "SATAPI "; break;
+            case AHCI_DEV_SEMB:   type_name = "SEMB   "; break;
+            case AHCI_DEV_PM:     type_name = "PM     "; break;
             default:              type_name = "Unknown"; break;
         }
 
-        kprintf("%d    %s %x\n", device->port_num, type_name, device->port->sig);
+        uint32_t size_mb = (uint32_t)(device->total_sectors * 512 / 1024 / 1024);
+
+        kprintf("%d    %s %8d  %8d  %x\n",
+               device->port_num,
+               type_name,
+               (uint32_t)device->total_sectors,
+               size_mb,
+               device->port->sig);
     }
 
     kprintf("\nTotal: %d devices\n", ahci_device_count);
@@ -392,6 +425,9 @@ void init_ahci(void) {
         return;
     }
 
+    // AHCI 레지스터 영역(4KB)을 1:1 매핑
+    vmm_map_page(ahci_base, ahci_base, 0x03);
+
     kprintf("[AHCI] AHCI base address: %x\n", ahci_base);
 
     // HBA 메모리 매핑
@@ -415,13 +451,13 @@ void init_ahci(void) {
     kprintf("[AHCI] Initialization complete! Found %d devices.\n", ahci_device_count);
 }
 
+// AHCI 장치 개수 반환
+uint32_t ahci_get_device_count(void) {
+    return ahci_device_count;
+}
+
 // AHCI 장치 가져오기 (인덱스로)
 ahci_device_t* ahci_get_device(uint32_t index) {
     if (index >= ahci_device_count) return NULL;
     return &ahci_devices[index];
-}
-
-// AHCI 장치 개수 가져오기
-uint32_t ahci_get_device_count(void) {
-    return ahci_device_count;
 }

@@ -101,15 +101,10 @@ void process_command() {
     else if (strcmp(cmd_buf, "uptime") == 0)  cmd_uptime();
     else if (strcmp(cmd_buf, "panic") == 0)   cmd_panic();
     else if (strcmp(cmd_buf, "cpuinfo") == 0) cmd_cpuinfo();
-    if (strcmp(cmd_buf, "lspci") == 0) {
-        pci_list_devices();
-    } else if (strcmp(cmd_buf, "pci") == 0) {
-        pci_list_devices();
-    }
+    else if (strcmp(cmd_buf, "pci_info") == 0) pci_list_devices();
     else if (strncmp(cmd_buf, "echo ", 5) == 0) {
         kprintf("%s\n", cmd_buf + 5);
-    }
-    else {
+    } else {
         kprintf("Unknown command: %s\n", cmd_buf);
     }
 

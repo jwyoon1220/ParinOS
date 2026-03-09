@@ -5,7 +5,7 @@ ENTRY(_start) /* kernel_entry.asm의 진입점 이름 */
 SECTIONS
 {
     /* 커널은 부트로더에 의해 0x1000 (4KB) 지점에 로드됨 */
-    . = 0x1000;
+    . = 0x10000;
 
     /* 커널의 시작 주소를 나타내는 심볼 */
     _kernel_start = .;

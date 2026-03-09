@@ -1,5 +1,6 @@
 #include "string.h"
 
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -10,6 +11,12 @@ int strlen(const char *s) {
         len++;
     }
     return len;
+}
+
+char* strcpy(char* dest, const char* src) {
+    char* temp = dest;
+    while ((*dest++ = *src++));
+    return temp;
 }
 
 // 두 문자열이 같은지 비교
@@ -89,5 +96,101 @@ char* strchr(const char *s, int c) {
         if (!*s++) return NULL;
     }
     return (char *)s;
+}
+
+// 간단한 snprintf 구현 (기본적인 %d, %x, %s만 지원)
+int snprintf(char* buffer, size_t size, const char* format, ...) {
+    if (!buffer || size == 0) return 0;
+
+    va_list args;
+    va_start(args, format);
+
+    size_t pos = 0;
+
+    for (const char* p = format; *p && pos < size - 1; p++) {
+        if (*p == '%' && *(p + 1)) {
+            p++;
+            switch (*p) {
+                case 'd': {
+                    int val = va_arg(args, int);
+                    char temp[16];
+                    int len = 0;
+
+                    if (val == 0) {
+                        temp[len++] = '0';
+                    } else {
+                        if (val < 0) {
+                            if (pos < size - 1) buffer[pos++] = '-';
+                            val = -val;
+                        }
+
+                        char digits[16];
+                        int digit_count = 0;
+                        while (val > 0) {
+                            digits[digit_count++] = '0' + (val % 10);
+                            val /= 10;
+                        }
+
+                        for (int i = digit_count - 1; i >= 0; i--) {
+                            temp[len++] = digits[i];
+                        }
+                    }
+
+                    for (int i = 0; i < len && pos < size - 1; i++) {
+                        buffer[pos++] = temp[i];
+                    }
+                    break;
+                }
+                case 'x': {
+                    unsigned int val = va_arg(args, unsigned int);
+                    char temp[16];
+                    int len = 0;
+
+                    if (val == 0) {
+                        temp[len++] = '0';
+                    } else {
+                        char digits[16];
+                        int digit_count = 0;
+                        while (val > 0) {
+                            int digit = val % 16;
+                            digits[digit_count++] = (digit < 10) ? ('0' + digit) : ('a' + digit - 10);
+                            val /= 16;
+                        }
+
+                        for (int i = digit_count - 1; i >= 0; i--) {
+                            temp[len++] = digits[i];
+                        }
+                    }
+
+                    for (int i = 0; i < len && pos < size - 1; i++) {
+                        buffer[pos++] = temp[i];
+                    }
+                    break;
+                }
+                case 's': {
+                    const char* str = va_arg(args, const char*);
+                    if (!str) str = "(null)";
+
+                    while (*str && pos < size - 1) {
+                        buffer[pos++] = *str++;
+                    }
+                    break;
+                }
+                case '%':
+                    if (pos < size - 1) buffer[pos++] = '%';
+                    break;
+                default:
+                    if (pos < size - 1) buffer[pos++] = '%';
+                    if (pos < size - 1) buffer[pos++] = *p;
+                    break;
+            }
+        } else {
+            buffer[pos++] = *p;
+        }
+    }
+
+    buffer[pos] = '\0';
+    va_end(args);
+    return pos;
 }
 
