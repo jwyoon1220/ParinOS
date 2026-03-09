@@ -7,8 +7,4 @@
 
 #include "../io.h"
 
-inline void eoi() { // end of interrupt
-    outb(0x20, 0x20);
-}
-
 #endif //PARINOS_UTIL_H

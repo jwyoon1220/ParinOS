@@ -8,8 +8,9 @@
 #include "std/malloc.h"
 #include "shell/shell.h"
 #include "mem/vmm.h"
+#include "drivers/pci.h"
+#include "drivers/ahci.h"
 
-#define megaOf(x) ((x) * 1024 * 1024)
 
 void kmain() {
     vga_clear();
@@ -17,13 +18,17 @@ void kmain() {
     init_gdt();   // GDT 초기화
     init_idt();   // IDT 초기화
 
+    init_pmm();
+    init_vmm();
+    init_heap(0x800000, 10);
+
+    init_pci();   // PCI 초기화
+    init_ahci();
+
     init_timer(1000);
 
     init_serial();
 
-    init_pmm();
-    init_vmm();
-    init_heap(0x800000, 10);
 
     __asm__ __volatile__("sti");
 

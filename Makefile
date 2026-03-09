@@ -57,7 +57,7 @@ run:
 	$(MAKE) clean
 	$(MAKE) all
 	clear
-	qemu-system-i386 -drive format=raw,file=$(IMAGE) -rtc base=localtime -serial stdio -serial file:serial.log
+	qemu-system-i386 -m 256M -drive file=makefile-build/ParinOS.img -drive id=disk0,file=disk.img,if=none,format=raw -device ahci,id=ahci -serial stdio -device ide-hd,drive=disk0,bus=ahci.0
 
 clean:
 	rm -rf $(BUILD_DIR)

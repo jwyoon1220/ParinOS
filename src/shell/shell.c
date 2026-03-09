@@ -6,6 +6,7 @@
 #include "../drivers/timer.h"
 #include "../drivers/rtc.h"
 #include "../mem/mem.h"
+#include "../drivers/pci.h"
 
 char* cmd_buf = NULL;
 int cmd_idx = 0;
@@ -53,7 +54,7 @@ static void cmd_uptime() {
 
 static void cmd_panic() {
     kprintf("\nCrashing system intentionally...\n");
-    volatile uint32_t *bad_ptr = (uint32_t*)0x4000000;
+    volatile uint32_t *bad_ptr = (uint32_t*)0x0;
     *bad_ptr = 0x1234;
 }
 
@@ -100,6 +101,11 @@ void process_command() {
     else if (strcmp(cmd_buf, "uptime") == 0)  cmd_uptime();
     else if (strcmp(cmd_buf, "panic") == 0)   cmd_panic();
     else if (strcmp(cmd_buf, "cpuinfo") == 0) cmd_cpuinfo();
+    if (strcmp(cmd_buf, "lspci") == 0) {
+        pci_list_devices();
+    } else if (strcmp(cmd_buf, "pci") == 0) {
+        pci_list_devices();
+    }
     else if (strncmp(cmd_buf, "echo ", 5) == 0) {
         kprintf("%s\n", cmd_buf + 5);
     }
