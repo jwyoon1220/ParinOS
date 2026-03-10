@@ -49,8 +49,7 @@ int block_device_register(block_device_t* device) {
     if (device->block_size == 0) {
         device->block_size = device->sector_size;
     }
-    
-    // 용량 계산
+
     uint64_t total_bytes = (uint64_t)device->total_sectors * (uint64_t)device->sector_size;
     device->capacity_mb = (uint32_t)(total_bytes / (1024ULL * 1024ULL));
     

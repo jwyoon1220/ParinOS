@@ -5,6 +5,9 @@
 #ifndef PARINOS_UTIL_H
 #define PARINOS_UTIL_H
 
+#include "../std/string.h"
+
 #include "../io.h"
+
 
 #endif //PARINOS_UTIL_H

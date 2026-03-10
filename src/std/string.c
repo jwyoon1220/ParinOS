@@ -106,7 +106,6 @@ int snprintf(char* buffer, size_t size, const char* format, ...) {
     va_start(args, format);
 
     size_t pos = 0;
-
     for (const char* p = format; *p && pos < size - 1; p++) {
         if (*p == '%' && *(p + 1)) {
             p++;

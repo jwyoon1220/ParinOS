@@ -342,7 +342,6 @@ int ahci_identify(ahci_device_t* device, void* buffer) {
     cmd_fis->command = ATA_CMD_IDENTIFY;
 
     port->ci = 1 << slot;
-
     while (1) {
         if ((port->ci & (1 << slot)) == 0) break;
         if (port->is & (1 << 30)) {

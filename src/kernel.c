@@ -11,6 +11,7 @@
 #include "shell/shell.h"
 #include "mem/vmm.h"
 #include "storge/ahci_adaptor.h"
+#include "fs/fs.h"
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
@@ -42,6 +43,8 @@ void kmain() {
     block_device_manager_init();   // Block Device Manager 초기화
     ahci_adapter_init();           // AHCI Adapter 초기화
     ahci_adapter_register_devices(); // AHCI 장치들을 Block Device로 등록
+
+    init_fs();
 
     // === 6단계: 사용자 인터페이스 ===
     init_keyboard();          // 키보드 드라이버

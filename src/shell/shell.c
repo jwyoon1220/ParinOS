@@ -7,11 +7,21 @@
 #include "../drivers/rtc.h"
 #include "../mem/mem.h"
 #include "../drivers/pci.h"
+#include "../fs/fs.h"
+#include "../util/util.h"
 
 char* cmd_buf = NULL;
 int cmd_idx = 0;
 
 // --- 명령어 처리 함수들 ---
+
+static void trim_spaces(char* str) {
+    char* end;
+    // 뒤쪽 공백 제거
+    end = str + strlen(str) - 1;
+    while(end > str && *end == ' ') end--;
+    *(end + 1) = '\0';
+}
 
 static void cmd_help() {
     kprintf("\nAvailable commands: help, md, clear, date, time, free, uptime, panic, echo");
@@ -102,9 +112,72 @@ void process_command() {
     else if (strcmp(cmd_buf, "panic") == 0)   cmd_panic();
     else if (strcmp(cmd_buf, "cpuinfo") == 0) cmd_cpuinfo();
     else if (strcmp(cmd_buf, "pci_info") == 0) pci_list_devices();
+    else if (strcmp(cmd_buf, "fs") == 0) fs_print_info();
+    else if (strcmp(cmd_buf, "ls") == 0) {
+        fs_ls("/0/"); // 일단 루트 디렉터리 고정 출력
+    }
+    else if (strncmp(cmd_buf, "cat ", 4) == 0) {
+        // "cat /0/note.txt" 처럼 입력받으므로 공백 이후의 경로를 전달
+
+        char* redir_ptr = strchr(cmd_buf, '>');
+
+        if (redir_ptr != NULL) {
+            *redir_ptr = '\0'; // 분리
+            char* src_cmd = cmd_buf;        // "cat /0/note.txt "
+            char* dest_path = redir_ptr + 1; // " /0/new.txt"
+
+            // 앞쪽 공백 건너뛰기
+            while (*dest_path == ' ') dest_path++;
+            // 소스 명령어 끝 공백 제거
+            trim_spaces(src_cmd);
+            // 목적지 경로 끝 공백 제거
+            trim_spaces(dest_path);
+
+            if (strncmp(src_cmd, "cat ", 4) == 0) {
+                char* src_path = src_cmd + 4;
+                while (*src_path == ' ') src_path++; // "cat" 뒤 공백 제거
+
+                fs_redirect_to_file(src_path, dest_path);
+                return;
+            }
+        } else {
+            // --- 일반 출력 모드 (cat src) ---
+            char* src_path = cmd_buf + 4;
+            while (*src_path == ' ') src_path++;
+            trim_spaces(src_path);
+
+            fs_cat(src_path);
+        }
+    }
+    // src/shell/shell.c
+
     else if (strncmp(cmd_buf, "echo ", 5) == 0) {
-        kprintf("%s\n", cmd_buf + 5);
-    } else {
+        char* content = cmd_buf + 5; // "hello world > /0/test.txt"
+        char* redir_ptr = strchr(content, '>');
+
+        if (redir_ptr != NULL) {
+            // --- 리디렉션 모드 (echo text > dest) ---
+            *redir_ptr = '\0';
+            char* dest_path = redir_ptr + 1;
+
+            // 공백 제거
+            trim_spaces(content);
+            while (*dest_path == ' ') dest_path++;
+            trim_spaces(dest_path);
+
+            // fs_write_string 호출 (아래 2번에서 구현)
+            fs_write_string(dest_path, content);
+        }
+        else {
+            // --- 일반 출력 모드 (echo text) ---
+            kprintf("%s\n", content);
+        }
+    } else if (strcmp(cmd_buf, "reboot") == 0) {
+        kprintf("Rebooting system...\n");
+        sleep(1000); // 1초 대기
+        asm volatile("int $0x19"); // BIOS 리부트 인터럽트
+    }
+    else {
         kprintf("Unknown command: %s\n", cmd_buf);
     }
 

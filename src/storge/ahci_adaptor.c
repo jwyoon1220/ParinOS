@@ -100,8 +100,7 @@ block_device_t* ahci_adapter_create_device(ahci_device_t* ahci_dev, uint32_t por
 
     block_dev->state = BLOCK_DEVICE_READY;
 
-    // 용량 정보 설정 (임시로 설정, 나중에 IDENTIFY로 정확한 값 얻기)
-    block_dev->total_sectors = 1024 * 1024; // 512MB 기본값
+    block_dev->total_sectors = ahci_dev->total_sectors;  // 하드코딩 제거
     block_dev->sector_size = 512;
     block_dev->block_size = 512;
 
