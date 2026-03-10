@@ -33,30 +33,32 @@
 - [ ] **PCI 탐색**: PCI 버스 스캔 및 장치 식별을 위한 드라이버 구현.
 - [ ] **ATA/AHCI 드라이버**: 하드디스크 및 SSD와의 통신을 위한 초기 드라이버 개발.
 
+### 6. 파일 시스템 (File System)
+- [ ] **파일시스템 구현**: FAT32 기반의 간단한 파일 시스템 설계 및 구현.
+- [ ] **기본 FS 명령어**: `ls`, `cat`, `echo` 등 메모리 기반 파일 관리 명령어 추가.
+- [ ] [FAT32를 구현](https://github.com/strawberryhacker/fat32) 해주신 [@strawberryhacker](https://github.com/strawberryhacker)님께 감사드립니다.
+
+### 7. 저장 장치 및 파일 시스템 (Storage & File System)
+- [ ] **AHCI 드라이버**: 하드디스크(HDD)의 섹터를 읽고 쓰기 위한 PIO(Programmed I/O) 방식 드라이버 구현.
+- [ ] **FAT16/32 구현**:
+  - **BPB(BIOS Parameter Block)** 분석: 클러스터 크기, 예약된 섹터 등 파일 시스템 레이아웃 파악.
+  - **FAT Table** 관리: 파일 데이터가 담긴 클러스터 체인 추적 및 빈 공간 할당.
+  - **Directory Entry** 관리: 파일 이름, 확장자, 크기, 생성 시간 등 메타데이터 처리.
+
 ---
 
 ## 📅 향후 로드맵 (Upcoming Tasks)
 
 
-### 1단계: 가상 파일 시스템 (VFS) 기초
-- [ ] **Ramdisk 구현**: `kmalloc`으로 메모리 일부를 할당받아 파일처럼 사용하는 초기 저장소 구축.
-- [ ] **기본 FS 명령어**: `ls`, `touch`, `cat` 등 메모리 기반 파일 관리 명령어 추가.
-
-### 2단계: 멀티태스킹 (Multitasking)
+### 1단계: 멀티태스킹 (Multitasking)
 - [ ] **Context Switching**: 프로세스/스레드의 레지스터 상태 저장 및 복원을 통한 협력적 멀티태스킹 도입.
 - [ ] **Scheduler**: 우선순위 또는 라운드 로빈 방식의 간단한 태스크 스케줄러 설계.
 
-### 3단계: 사용자 모드 (User Mode)
+### 2단계: 사용자 모드 (User Mode)
 - [ ] **링 3(Ring 3) 진입**: 커널 모드와 사용자 모드 분리 및 보호 체계 강화.
 - [ ] **System Call**: 소프트웨어 인터럽트(`int 0x80`)를 통한 사용자 프로그램의 커널 기능 호출.
 
-### 4단계: 저장 장치 및 파일 시스템 (Storage & File System)
-- [ ] **ATA/IDE 드라이버**: 하드디스크(HDD)의 섹터를 읽고 쓰기 위한 PIO(Programmed I/O) 방식 드라이버 구현.
-- [ ] **MBR/GPT 분석**: 디스크의 파티션 테이블을 읽어 ParinOS 파티션의 위치 파악.
-- [ ] **FAT16/32 구현**:
-    - **BPB(BIOS Parameter Block)** 분석: 클러스터 크기, 예약된 섹터 등 파일 시스템 레이아웃 파악.
-    - **FAT Table** 관리: 파일 데이터가 담긴 클러스터 체인 추적 및 빈 공간 할당.
-    - **Directory Entry** 관리: 파일 이름, 확장자, 크기, 생성 시간 등 메타데이터 처리.
+### 3단계: 저장 장치 및 파일 시스템 (Storage & File System)
 - [ ] **VFS(Virtual File System) 추상화**: 하드디스크, 램디스크 등 서로 다른 저장 매체를 `open()`, `read()`, `write()` 같은 통일된 인터페이스로 접근하도록 설계.
 ---
 
