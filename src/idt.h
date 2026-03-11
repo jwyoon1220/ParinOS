@@ -27,14 +27,10 @@ struct idt_ptr_struct {
     uint32_t base;
 };
 
-
-
 typedef struct idt_ptr_struct idt_ptr_t;
 #pragma pack(pop)
 
 void init_idt();
-void timer_handler_main();
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
-
 
 #endif

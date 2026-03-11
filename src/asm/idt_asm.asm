@@ -5,7 +5,7 @@ global irq0_handler
 global irq1_handler
 
 extern keyboard_handler_main
-extern timer_handler_main
+extern scheduler_tick
 
 ; 1. IDT 로드 함수 (안전한 버전)
 idt_load:
@@ -39,11 +39,13 @@ idt_load:
 %endmacro
 
 ; 2. 타이머 핸들러 (IRQ 0)
+;    scheduler_tick(uint32_t current_esp) 를 호출하고,
+;    반환값(eax)을 새 ESP 로 사용하여 컨텍스트 전환을 수행합니다.
 global irq0_handler
-extern timer_handler_main
 
 irq0_handler:
     cli                 ; 인터럽트 비활성화
+
     push 0              ; Dummy error code
     push 32             ; IRQ0 (타이머) 인터럽트 번호
 
@@ -58,12 +60,19 @@ irq0_handler:
     mov fs, ax
     mov gs, ax
 
-    ; 🌟 C 함수에 인자 전달: 현재 스택 포인터(esp)를 넘김
+    ; scheduler_tick(current_esp) 호출
+    ; 인자: 현재 ESP (저장된 컨텍스트 프레임 시작 주소, DS 위치를 가리킴)
+    ; 반환: 다음 스레드의 ESP (전환 없으면 동일한 값)
     push esp
-    call timer_handler_main
+    call scheduler_tick
     add esp, 4          ; 넘겨준 인자(esp) 정리
 
-    ; 복구 과정
+    ; eax = scheduler_tick 의 반환값:
+    ;   - 컨텍스트 전환 없음 → 현재 스레드의 원래 ESP (push esp 로 전달한 값)
+    ;   - 컨텍스트 전환 있음 → 다음 스레드의 저장된 ESP (다른 스레드의 컨텍스트 프레임 시작)
+    mov esp, eax        ; ESP 교체 → 이 순간 다른 스레드의 스택으로 전환됨
+
+    ; 컨텍스트 복원
     pop eax
     mov ds, ax
     mov es, ax
@@ -73,7 +82,7 @@ irq0_handler:
     popa                ; 범용 레지스터 복구
     add esp, 8          ; int_no와 err_code 스택 정리
     sti                 ; 인터럽트 다시 활성화
-    iret                ; 인터럽트 종료 및 복귀
+    iret                ; 인터럽트 종료 및 복귀 (EIP, CS, EFLAGS 복원)
 
 ; 3. 키보드 핸들러 (IRQ 1)
 irq1_handler:

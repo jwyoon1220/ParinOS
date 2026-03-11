@@ -12,6 +12,7 @@
 #include "mem/vmm.h"
 #include "storge/ahci_adaptor.h"
 #include "fs/fs.h"
+#include "kernel/multitasking.h"
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
@@ -47,13 +48,14 @@ void kmain() {
 
     init_fs();
 
-    // === 6단계: 사용자 인터페이스 ===
+    // === 6단계: 멀티태스킹 시스템 초기화 ===
+    init_multitasking();
+
+    // === 7단계: 사용자 인터페이스 ===
     init_keyboard();          // 키보드 드라이버
     shell_init();             // 셸 초기화
 
-
-    // === 메인 루프 ===
     while(1) {
-        __asm__("hlt");       // CPU 대기 상태 (전력 소모 감소)
+        __asm__ __volatile__("hlt");
     }
 }
