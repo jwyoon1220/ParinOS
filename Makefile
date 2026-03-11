@@ -77,8 +77,8 @@ $(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(ASM_OBJECTS)
 #   LBA 129~    : kernel.bin
 $(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.bin
 	cat $^ > $@
-	# 512KB = 1024섹터: boot(1) + loader(128) + kernel용 공간(895섹터)
-	truncate -s 524288 $@
+	# 1mb
+	truncate -s 1048576  $@
 
 run:
 	$(MAKE) clean

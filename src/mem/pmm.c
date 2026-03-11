@@ -249,9 +249,9 @@ void dump_memory(uint32_t start_addr, int lines) {
         for (int j = 0; j < 8; j++) {
             char c = (char)ptr[j];
             if (c >= 32 && c <= 126) {
-                kputchar(c);
+                lkputchar(c);
             } else {
-                kputchar('.');
+                lkputchar('.');
             }
         }
 

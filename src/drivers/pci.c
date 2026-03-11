@@ -198,8 +198,8 @@ static void print_hex_2digit(uint8_t value) {
     char high_char = (high < 10) ? ('0' + high) : ('A' + high - 10);
     char low_char = (low < 10) ? ('0' + low) : ('A' + low - 10);
 
-    kputchar(high_char);
-    kputchar(low_char);
+    lkputchar(high_char);
+    lkputchar(low_char);
 }
 
 // 숫자를 4자리 16진수로 출력하는 헬퍼 함수
@@ -243,7 +243,7 @@ void pci_list_devices(void) {
         // 클래스 이름 뒤에 공백 추가 (12자리 맞추기)
         int len = 0;
         for (int j = 0; class_name[j] != '\0'; j++) len++;
-        for (int j = len; j < 12; j++) kputchar(' ');
+        for (int j = len; j < 12; j++) lkputchar(' ');
 
         // SubClass (2자리)
         print_hex_2digit(dev->subclass);

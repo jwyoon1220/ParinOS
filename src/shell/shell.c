@@ -96,7 +96,7 @@ void shell_init() {
 }
 
 void process_command() {
-    kputchar('\n');
+    lkputchar('\n');
     cmd_buf[cmd_idx] = '\0';
 
     if (cmd_idx == 0) return;
@@ -194,10 +194,10 @@ void shell_input(char c) {
     } else if (c == '\b') {
         if (cmd_idx > 0) {
             cmd_idx--;
-            kputchar('\b');
+            lkputchar('\b');
         }
     } else if (cmd_idx < 127) {
         cmd_buf[cmd_idx++] = c;
-        kputchar(c);
+        lkputchar(c);
     }
 }

@@ -46,7 +46,7 @@ void vga_clear() {
 }
 
 // 문자 하나 출력 (VGA + Serial)
-void kputchar(char c) {
+void lkputchar(char c) {
     // 1. VGA 출력 로직
     char* video_memory = (char*)0xB8000;
     if (c == '\n') {
@@ -79,25 +79,25 @@ void kputchar(char c) {
 // 문자열 출력 (VGA + Serial)
 void kprint(const char* string) {
     for (int i = 0; string[i] != '\0'; i++) {
-        kputchar(string[i]); // kputchar 내부에서 이미 양쪽 출력 처리됨
+        lkputchar(string[i]); // kputchar 내부에서 이미 양쪽 출력 처리됨
     }
 }
 
 // 줄바꿈 포함 출력 (VGA + Serial)
 void kprintln(const char* string) {
     kprintf(string);
-    kputchar('\n');
+    lkputchar('\n');
 }
 
 // 16진수 출력 (VGA + Serial)
 void kprint_hex(uint32_t value) {
-    if (value == 0) { kputchar('0'); return; }
+    if (value == 0) { lkputchar('0'); return; }
     int started = 0;
     for (int i = 28; i >= 0; i -= 4) {
         uint8_t nibble = (value >> i) & 0xF;
         if (nibble != 0 || started) {
             char c = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
-            kputchar(c);
+            lkputchar(c);
             started = 1;
         }
     }
@@ -105,10 +105,10 @@ void kprint_hex(uint32_t value) {
 
 // 10진수 출력 (VGA + Serial)
 void kprint_dec(uint32_t value) {
-    if (value == 0) { kputchar('0'); return; }
+    if (value == 0) { lkputchar('0'); return; }
     char s[11]; int i = 0;
     while (value > 0) { s[i++] = '0' + (value % 10); value /= 10; }
-    while (i > 0) kputchar(s[--i]);
+    while (i > 0) lkputchar(s[--i]);
 }
 
 // vga.c
@@ -137,12 +137,12 @@ void kprintf(const char* format, ...) {
                     kprint_hex(va_arg(args, uint32_t));
                     break;
                 case 's': kprint(va_arg(args, char*)); break;
-                case 'c': kputchar((char)va_arg(args, int)); break;
-                case '%': kputchar('%'); break;
-                default:  kputchar('%'); kputchar(format[i]); break;
+                case 'c': lkputchar((char)va_arg(args, int)); break;
+                case '%': lkputchar('%'); break;
+                default:  lkputchar('%'); lkputchar(format[i]); break;
             }
         } else {
-            kputchar(format[i]);
+            lkputchar(format[i]);
         }
     }
     va_end(args);

@@ -16,7 +16,7 @@ extern uint8_t default_color;
 void vga_clear();
 
 // 기본 출력 함수들
-void kputchar(char c);
+void lkputchar(char c);
 void kprint(const char* string);
 void kprintln(const char* string);
 void kprint_char(char c);

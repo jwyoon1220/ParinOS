@@ -5,7 +5,7 @@
 
 /* 디스크/메모리 레이아웃 상수 */
 #define KERNEL_LBA_START    129         /* 커널 시작 LBA */
-#define KERNEL_SECTORS      256         /* 읽을 커널 섹터 수 */
+#define KERNEL_SECTORS      1024         /* 읽을 커널 섹터 수 */
 #define KERNEL_LOAD_ADDR    0x100000    /* 커널 로드 목적지: 1MB */
 
 /* I/O 포트 정의 */
@@ -72,7 +72,7 @@ static uint16_t *const vga_buf = (uint16_t *)0xB8000;
 static int vga_col = 0;
 static int vga_row = 1;
 
-static void kputchar(char c) {
+static void lkputchar(char c) {
     // VGA 처리
     if (c == '\n') {
         vga_row++;
@@ -89,8 +89,8 @@ static void kputchar(char c) {
     serial_putchar(c);
 }
 
-static void kprint(const char *s) {
-    while (*s) kputchar(*s++);
+static void lkprint(const char *s) {
+    while (*s) lkputchar(*s++);
 }
 
 /* ─── ATA 디스크 읽기 ─── */
@@ -125,22 +125,22 @@ static int ata_read_sector(uint32_t lba, uint8_t *buf) {
 void loader_main(void) {
     serial_init();
 
-    kprint("ParinOS Stage 2 Loader Online\n");
-    kprint("Loading kernel to 0x100000...");
+    lkprint("ParinOS Stage 2 Loader Online\n");
+    lkprint("Loading kernel to 0x100000...");
 
     uint8_t *dest = (uint8_t *)KERNEL_LOAD_ADDR;
 
     for (int i = 0; i < KERNEL_SECTORS; i++) {
         if (ata_read_sector(KERNEL_LBA_START + i, dest + (uint32_t)i * 512U) != 0) {
-            kprint("\n[DISK ERROR at LBA ");
+            lkprint("\n[DISK ERROR at LBA ");
             // 에러 시 무한 루프
             for (;;) ;
         }
 
-        if ((i & 0x0F) == 0) kputchar('.');
+        if ((i & 0x0F) == 0) lkputchar('.');
     }
 
-    kprint(" OK\nJumping to kernel...\n");
+    lkprint(" OK.\nJumping to kernel...\n");
 
     // 1MB 영역으로 점프
     typedef void (*kernel_entry_t)(void);
