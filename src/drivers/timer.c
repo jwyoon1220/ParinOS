@@ -1,5 +1,5 @@
 //
-// Created by jwyoo on 26. 3. 8..
+// Created by jwyoon on 26. 3. 8..
 //
 
 #include "timer.h"
@@ -9,15 +9,8 @@
 #include "../drivers/serial.h"
 #include "../util/util.h"
 
+// 시스템 틱 카운터 (scheduler_tick 에서 증가, sleep/get_total_ticks 에서 사용)
 volatile uint32_t tick = 0;
-
-// irq0_handler에서 호출되는거
-void timer_handler_main(registers_t* regs) {
-    (void)regs;
-    tick++;
-    //kprintf_serial("tick: %d\n", tick);
-    eoi();
-}
 
 void init_timer(uint32_t frequency) {
     uint32_t divisor = 1193182 / frequency;

@@ -12,6 +12,7 @@
 #include "mem/vmm.h"
 #include "storge/ahci_adaptor.h"
 #include "fs/fs.h"
+#include "kernel/multitasking.h"
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
@@ -51,6 +52,9 @@ void kmain() {
     init_keyboard();          // 키보드 드라이버
     shell_init();             // 셸 초기화
 
+    // === 7단계: 멀티태스킹 시스템 초기화 ===
+    // 모든 드라이버와 서브시스템이 준비된 후에 활성화
+    init_multitasking();
 
     // === 메인 루프 ===
     while(1) {
