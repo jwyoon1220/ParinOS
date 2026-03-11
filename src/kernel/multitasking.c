@@ -154,7 +154,7 @@ void init_multitasking(void) {
     threads[0].stack            = NULL; // 부트 스택 (kmalloc 으로 할당하지 않음)
     threads[0].stack_size       = 0;
     threads[0].sleep_until_tick = 0;
-    copy_name(threads[0].name, "kmain", sizeof(threads[0].name));
+    copy_name(threads[0].name, "ParinOS Main Thread", sizeof(threads[0].name));
 
     current_tid = 0;
     current_pid = 0;
@@ -451,4 +451,39 @@ uint32_t scheduler_tick(uint32_t current_esp) {
 
     // 10. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
     return threads[current_tid].esp;
+}
+
+void dump_multitasking_info(void) {
+    kprintf("\n--- ParinOS Process-Thread Tree ---\n");
+
+    for (int p = 0; p < KPROCESS_MAX; p++) {
+        if (processes[p].state == KPROCESS_UNUSED) continue;
+
+        const char* p_state = (processes[p].state == KPROCESS_RUNNING) ? "RUNNING" : "ZOMBIE";
+
+        // %-12s가 이제 정상 작동한다면:
+        kprintf("[%d] %s (Status: %s)\n", processes[p].id, processes[p].name, p_state);
+
+        for (uint32_t i = 0; i < processes[p].thread_count; i++) {
+            uint32_t tid = processes[p].thread_ids[i];
+            kthread_t* t = &threads[tid];
+
+            const char* t_state;
+            switch(t->state) {
+                case KTHREAD_READY:    t_state = "READY";    break;
+                case KTHREAD_RUNNING:  t_state = "RUNNING";  break;
+                case KTHREAD_SLEEPING: t_state = "SLEEPING"; break;
+                case KTHREAD_ZOMBIE:   t_state = "ZOMBIE";   break;
+                default:               t_state = "UNUSED";   break;
+            }
+
+            const char* branch = (i == processes[p].thread_count - 1) ? " `---" : " |---";
+
+            // 포인터(%p)와 너비 지정(%d, %s)을 적극 활용
+            kprintf("%s [TID:%d] %s | %s | Stack: %p\n",
+                    branch, t->id, t->name[0] ? t->name : "(null)", t_state, t->esp);
+        }
+        kprintf(" |\n");
+    }
+    kprintf("-----------------------------------\n");
 }

@@ -9,6 +9,8 @@
 #include "../drivers/pci.h"
 #include "../fs/fs.h"
 #include "../util/util.h"
+#include "../kernel/multitasking.h"
+#include "../mem/vmm.h"
 
 char* cmd_buf = NULL;
 int cmd_idx = 0;
@@ -112,6 +114,8 @@ void process_command() {
     else if (strcmp(cmd_buf, "panic") == 0)   cmd_panic();
     else if (strcmp(cmd_buf, "cpuinfo") == 0) cmd_cpuinfo();
     else if (strcmp(cmd_buf, "pci_info") == 0) pci_list_devices();
+    else if (strcmp(cmd_buf, "task_view") == 0) dump_multitasking_info();
+    else if (strcmp(cmd_buf, "vmm_stat") == 0) vmm_print_stats();
     else if (strcmp(cmd_buf, "fs") == 0) fs_print_info();
     else if (strcmp(cmd_buf, "ls") == 0) {
         fs_ls("/0/"); // 일단 루트 디렉터리 고정 출력

@@ -87,7 +87,7 @@ static void vmm_temp_unmap(void* temp_vaddr) {
 
     // 임시 매핑 범위 확인
     if (vaddr < TEMP_MAP_BASE || vaddr >= TEMP_MAP_BASE + TEMP_MAP_SIZE) {
-        kprintf("[VMM] Invalid temporary mapping address: %x\n", vaddr);
+        kprintf("[VMM] Invalid temporary mapping address: 0x%x\n", vaddr);
         return;
     }
 
@@ -469,11 +469,11 @@ void init_vmm(void) {
     uint32_t kernel_end = (uint32_t)&_kernel_end;
     uint32_t kernel_pages = (kernel_end - kernel_start + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    kprintf("[VMM] Kernel: %x - %x (%d pages)\n",
+    kprintf("[VMM] Kernel: 0x%x - 0x%x (%d pages)\n",
            kernel_start, kernel_end, kernel_pages);
 
     // 4. 임시 매핑 영역 설정
-    kprintf("[VMM] Temporary mapping area: %x - %x (%d slots)\n",
+    kprintf("[VMM] Temporary mapping area: 0x%x - 0x%x (%d slots)\n",
            TEMP_MAP_BASE, TEMP_MAP_BASE + TEMP_MAP_SIZE - 1, TEMP_MAP_SLOTS);
 
     // 5. 페이징 활성화
@@ -496,7 +496,7 @@ void init_vmm(void) {
     vmm_statistics.kernel_pages = vmm_statistics.mapped_pages;
 
     kprintf("[VMM] Virtual Memory Manager initialized\n");
-    kprintf("[VMM] Identity mapping: 0x00000000 - %x\n", IDENTITY_MAP_SIZE - 1);
+    kprintf("[VMM] Identity mapping: 0x00000000 - 0x%x\n", IDENTITY_MAP_SIZE - 1);
 }
 
 // =============================================================================
@@ -528,7 +528,7 @@ void page_fault_handler(uint32_t error_code) {
         if (pframe) {
             vmm_result_t result = vmm_map_page(page_addr, (uint32_t)pframe, PAGE_FLAGS_KERNEL);
             if (result == VMM_SUCCESS) {
-                kprintf("[VMM] Dynamically allocated page at %x\n", page_addr);
+                //kprintf("[VMM] Dynamically allocated page at %x\n", page_addr);
                 return; // 성공적으로 처리됨
             }
             pmm_free_frame(pframe);

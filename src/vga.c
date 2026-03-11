@@ -8,7 +8,9 @@ int cursor_x = 0;
 int cursor_y = 0;
 uint8_t default_color = 0x0F;
 
-// 하드웨어 커서 업데이트
+// ─────────────────────────────────────────────────────────────────────────────
+// 하드웨어 커서 및 화면 관리
+// ─────────────────────────────────────────────────────────────────────────────
 void update_cursor(int x, int y) {
     uint16_t pos = y * 80 + x;
     outb(0x3D4, 0x0F);
@@ -17,7 +19,6 @@ void update_cursor(int x, int y) {
     outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
 }
 
-// 화면 스크롤
 static void vga_scroll() {
     char* video_memory = (char*)0xB8000;
     for (int i = 0; i < 80 * (25 - 1); i++) {
@@ -31,7 +32,6 @@ static void vga_scroll() {
     cursor_y = 25 - 1;
 }
 
-// 화면 초기화 및 시리얼 로그
 void vga_clear() {
     char* video_memory = (char*)0xB8000;
     for (int i = 0; i < 80 * 25; i++) {
@@ -41,13 +41,17 @@ void vga_clear() {
     cursor_x = 0;
     cursor_y = 0;
     update_cursor(0, 0);
-
     kprintf_serial("[VGA] Screen Cleared\n");
 }
 
-// 문자 하나 출력 (VGA + Serial)
+void vga_set_color(uint8_t color) {
+    default_color = color;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 단일 문자 및 문자열 출력 로직
+// ─────────────────────────────────────────────────────────────────────────────
 void lkputchar(char c) {
-    // 1. VGA 출력 로직
     char* video_memory = (char*)0xB8000;
     if (c == '\n') {
         cursor_x = 0;
@@ -60,6 +64,10 @@ void lkputchar(char c) {
         int offset = (cursor_y * 80 + cursor_x) * 2;
         video_memory[offset] = ' ';
         video_memory[offset + 1] = default_color;
+
+        // 시리얼 콘솔에서도 백스페이스 처리
+        write_serial('\b'); write_serial(' '); write_serial('\b');
+        return; // 백스페이스는 여기서 종료
     } else {
         int offset = (cursor_y * 80 + cursor_x) * 2;
         video_memory[offset] = c;
@@ -71,77 +79,142 @@ void lkputchar(char c) {
     if (cursor_y >= 25) vga_scroll();
     update_cursor(cursor_x, cursor_y);
 
-    // 2. 시리얼 출력 동기화 (kprintf_serial 내부에서 \r\n 처리를 하므로 단일 문자 전송)
     if (c == '\n') write_serial('\r');
     write_serial(c);
 }
 
-// 문자열 출력 (VGA + Serial)
 void kprint(const char* string) {
     for (int i = 0; string[i] != '\0'; i++) {
-        lkputchar(string[i]); // kputchar 내부에서 이미 양쪽 출력 처리됨
+        lkputchar(string[i]);
     }
 }
 
-// 줄바꿈 포함 출력 (VGA + Serial)
 void kprintln(const char* string) {
-    kprintf(string);
+    kprint(string);
     lkputchar('\n');
 }
 
-// 16진수 출력 (VGA + Serial)
-void kprint_hex(uint32_t value) {
-    if (value == 0) { lkputchar('0'); return; }
-    int started = 0;
-    for (int i = 28; i >= 0; i -= 4) {
-        uint8_t nibble = (value >> i) & 0xF;
-        if (nibble != 0 || started) {
-            char c = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
-            lkputchar(c);
-            started = 1;
+// ─────────────────────────────────────────────────────────────────────────────
+// 범용 숫자 출력 헬퍼 (진법, 부호, 패딩 처리)
+// ─────────────────────────────────────────────────────────────────────────────
+static void print_number(uint32_t value, int base, int is_signed, int width, char pad_char, int uppercase) {
+    char buffer[32]; // 2진수 32비트 처리를 위한 충분한 크기
+    int ptr = 0;
+    uint32_t uval = value;
+    int is_negative = 0;
+
+    // 부호 처리 (10진수 음수일 경우에만)
+    if (is_signed && (int32_t)value < 0) {
+        is_negative = 1;
+        uval = (uint32_t)(-(int32_t)value);
+    }
+
+    // 숫자를 역순으로 버퍼에 저장
+    if (uval == 0) {
+        buffer[ptr++] = '0';
+    } else {
+        while (uval > 0) {
+            int rem = uval % base;
+            buffer[ptr++] = (rem < 10) ? ('0' + rem) : ((uppercase ? 'A' : 'a') + rem - 10);
+            uval /= base;
         }
+    }
+
+    int num_len = ptr + is_negative;
+
+    // 1. 공백 패딩 ('0' 채우기가 아닐 때, 오른쪽에 정렬)
+    if (pad_char == ' ') {
+        while (num_len < width) {
+            lkputchar(' ');
+            width--;
+        }
+    }
+
+    // 2. 부호 출력 (0 패딩보다 앞에 있어야 함. ex: -0005)
+    if (is_negative) lkputchar('-');
+
+    // 3. '0' 채우기 패딩
+    if (pad_char == '0') {
+        while (num_len < width) {
+            lkputchar('0');
+            width--;
+        }
+    }
+
+    // 4. 버퍼에 저장된 실제 숫자 출력 (역순)
+    while (ptr > 0) {
+        lkputchar(buffer[--ptr]);
     }
 }
 
-// 10진수 출력 (VGA + Serial)
-void kprint_dec(uint32_t value) {
-    if (value == 0) { lkputchar('0'); return; }
-    char s[11]; int i = 0;
-    while (value > 0) { s[i++] = '0' + (value % 10); value /= 10; }
-    while (i > 0) lkputchar(s[--i]);
-}
-
-// vga.c
-
-// 색상 변경을 위한 함수 추가
-void vga_set_color(uint8_t color) {
-    default_color = color;
-}
-
-// 기존 kputchar는 default_color를 사용하므로
-// vga_set_color 호출 후 kprintf를 쓰면 색상이 적용됩니다.
-
-// 포맷팅 출력 (VGA + Serial 핵심)
+// ─────────────────────────────────────────────────────────────────────────────
+// 완전판 kprintf (stdio.h 수준)
+// ─────────────────────────────────────────────────────────────────────────────
 void kprintf(const char* format, ...) {
     va_list args;
     va_start(args, format);
 
     for (int i = 0; format[i] != '\0'; i++) {
         if (format[i] == '%' && format[i + 1] != '\0') {
-            i++;
+            i++; // '%' 다음 문자로 이동
+
+            char pad_char = ' ';
+            int width = 0;
+
+            // 1. 패딩 문자 확인 (0으로 시작하는지)
+            if (format[i] == '0') {
+                pad_char = '0';
+                i++;
+            }
+
+            // 2. 출력 너비(Width) 계산
+            while (format[i] >= '0' && format[i] <= '9') {
+                width = width * 10 + (format[i] - '0');
+                i++;
+            }
+
+            // 3. 포맷 지정자 처리
             switch (format[i]) {
-                case 'd': kprint_dec(va_arg(args, uint32_t)); break;
-                case 'x':
-                case 'X':
-                    kprint("0x");
-                    kprint_hex(va_arg(args, uint32_t));
+                case 'd': // 부호 있는 10진수
+                case 'i':
+                    print_number(va_arg(args, uint32_t), 10, 1, width, pad_char, 0);
                     break;
-                case 's': kprint(va_arg(args, char*)); break;
-                case 'c': lkputchar((char)va_arg(args, int)); break;
-                case '%': lkputchar('%'); break;
-                default:  lkputchar('%'); lkputchar(format[i]); break;
+                case 'u': // 부호 없는 10진수
+                    print_number(va_arg(args, uint32_t), 10, 0, width, pad_char, 0);
+                    break;
+                case 'x': // 16진수 (소문자, 접두사 없음)
+                    print_number(va_arg(args, uint32_t), 16, 0, width, pad_char, 0);
+                    break;
+                case 'X': // 16진수 (대문자, 접두사 없음)
+                    print_number(va_arg(args, uint32_t), 16, 0, width, pad_char, 1);
+                    break;
+                case 'p': // 포인터 주소 (0x 자동 추가 + 8자리 0 채우기)
+                    kprint("0x");
+                    print_number(va_arg(args, uint32_t), 16, 0, width > 0 ? width : 8, '0', 1);
+                    break;
+                case 'b': // 2진수 (OS 개발 특화 기능)
+                    kprint("0b");
+                    print_number(va_arg(args, uint32_t), 2, 0, width, pad_char, 0);
+                    break;
+                case 'c': // 단일 문자
+                    lkputchar((char)va_arg(args, int));
+                    break;
+                case 's': { // 문자열 (NULL 안전성 추가)
+                    char* str = va_arg(args, char*);
+                    if (!str) str = "(null)";
+                    kprint(str);
+                    break;
+                }
+                case '%': // '%' 자체 출력
+                    lkputchar('%');
+                    break;
+                default: // 해석할 수 없는 포맷은 그대로 출력
+                    lkputchar('%');
+                    lkputchar(format[i]);
+                    break;
             }
         } else {
+            // 일반 문자는 그대로 출력
             lkputchar(format[i]);
         }
     }

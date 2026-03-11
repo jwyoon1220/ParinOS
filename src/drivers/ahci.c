@@ -411,7 +411,7 @@ void init_ahci(void) {
         return;
     }
 
-    kprintf("[AHCI] Found AHCI controller: %x:%x\n",
+    kprintf("[AHCI] Found AHCI controller: 0x%x:0x%x\n",
             ahci_pci_device->vendor_id, ahci_pci_device->device_id);
 
     // PCI 장치 활성화
@@ -427,7 +427,7 @@ void init_ahci(void) {
     // AHCI 레지스터 영역(4KB)을 1:1 매핑
     vmm_map_page(ahci_base, ahci_base, 0x03);
 
-    kprintf("[AHCI] AHCI base address: %x\n", ahci_base);
+    kprintf("[AHCI] AHCI base address: 0x%x\n", ahci_base);
 
     // HBA 메모리 매핑
     ahci_hba_mem = (hba_mem_t*)ahci_base;
@@ -437,7 +437,7 @@ void init_ahci(void) {
 
     // 구현된 포트 확인
     uint32_t pi = ahci_hba_mem->pi;
-    kprintf("[AHCI] Implemented ports: %x\n", pi);
+    kprintf("[AHCI] Implemented ports: 0x%x\n", pi);
 
     // 각 포트 검사 및 초기화
     for (int i = 0; i < 32; i++) {

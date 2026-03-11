@@ -37,7 +37,7 @@ void init_heap(uint32_t start_vaddr, uint32_t initial_pages) {
     heap_start->next = NULL;
     heap_start->prev = NULL; // 첫 블록의 이전은 없음
 
-    kprintf("[malloc] Heap Initialized at %x\n", start_vaddr);
+    kprintf("[Heap] Heap Initialized at 0x%x\n", start_vaddr);
 }
 
 // ---------------------------------------------------------

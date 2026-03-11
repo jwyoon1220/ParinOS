@@ -129,7 +129,7 @@ void pci_enable_device(pci_device_t* device) {
 
     pci_config_write_word(device->bus, device->device, device->function, PCI_COMMAND, command);
 
-    kprintf("[PCI] Device %x:%x enabled\n", device->vendor_id, device->device_id);
+    kprintf("[PCI] Device 0x%x:0x%x enabled\n", device->vendor_id, device->device_id);
 }
 
 // PCI 장치 정보 읽기

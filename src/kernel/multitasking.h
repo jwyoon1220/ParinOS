@@ -191,4 +191,7 @@ void kschedule(void);
  */
 uint32_t scheduler_tick(uint32_t current_esp);
 
+void dump_multitasking_info(void);
+
+
 #endif // PARINOS_MULTITASKING_H
