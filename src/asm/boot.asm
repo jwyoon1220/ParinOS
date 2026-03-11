@@ -1,7 +1,11 @@
 [bits 16]
 [org 0x7c00]
 
-KERNEL_OFFSET equ 0x10000    ; 커널이 실행될 32비트 보호 모드 물리 주소
+; 2단계 로더가 로드될 물리 주소 (0x10000)
+LOADER_OFFSET   equ 0x10000
+; 2단계 로더 크기: 128섹터 = 64KB (LBA 1~128)
+; 커널은 그 다음인 LBA 129부터 시작
+LOADER_SECTORS  equ 128
 
 _start:
     ; 1. 세그먼트 및 스택 초기화
@@ -26,21 +30,24 @@ _start:
     ; 4. E820 메모리 맵 수집 (PMM에서 사용)
     call collect_memory_map
 
-    ; 5. 커널 로딩 (LBA 확장 읽기 방식)
-    call load_kernel
+    ; 5. 2단계 C 로더를 0x10000에 로딩 (LBA 확장 읽기 방식)
+    call load_loader
 
     ; 6. 성공 메시지 출력
     mov si, MSG_OK
     call print_string
 
-    ; 7. 32비트 보호 모드 전환 준비
+    ; 7. A20 게이트 활성화 (1MB 이상 메모리 접근 허용)
+    call enable_a20
+
+    ; 8. 32비트 보호 모드 전환 준비
     cli                     ; ⚠️ 중요: 보호 모드 진입 전 인터럽트 완전 금지
     lgdt [gdt_descriptor]   ; GDT 등록
     mov eax, cr0
     or eax, 1               ; PE(Protection Enable) 비트 켜기
     mov cr0, eax
 
-    ; 8. 코드 세그먼트로 Far Jump (파이프라인 플러시)
+    ; 9. 코드 세그먼트로 Far Jump (파이프라인 플러시)
     jmp 0x08:init_pm
 
 ; --- [함수: E820 메모리 맵 수집] ---
@@ -74,16 +81,17 @@ collect_memory_map:
     mov [0x8000], bp        ; 0x8000번지에 총 메모리 맵 개수 저장
     ret
 
-; --- [함수: 커널 로딩 (LBA 확장 방식, 64KB 장벽 돌파)] ---
-load_kernel:
+; --- [함수: 2단계 C 로더 로딩 (LBA 1부터 128섹터 = 64KB)] ---
+load_loader:
     mov [SECTORS_READ], word 0
 
     ; 대상 물리 주소 0x10000을 세그먼트:오프셋 (0x1000:0x0000)으로 표현
-    mov word [DAP_BUFFER_SEGMENT], 0x1000   ; <-- 0x0100 을 0x1000 으로 수정!
+    mov word [DAP_BUFFER_SEGMENT], 0x1000
     mov word [DAP_BUFFER_OFFSET], 0x0000
+    mov dword [DAP_START_LBA], 1        ; LBA 1부터 로더 시작
 
 .read_loop:
-    cmp [SECTORS_READ], word 200    ; 200섹터(100KB) 읽기 (커널이 76KB이므로 넉넉함)
+    cmp [SECTORS_READ], word LOADER_SECTORS
     jge .success
 
     ; LBA 확장 읽기 서비스 (AH=0x42) 호출
@@ -117,6 +125,14 @@ load_kernel:
     clc
     ret
 
+; --- [함수: A20 게이트 활성화 (Fast A20 방식)] ---
+enable_a20:
+    in al, 0x92
+    or al, 0x02             ; A20 비트 활성화
+    and al, 0xFE            ; 시스템 리셋 방지 (비트 0 = 0)
+    out 0x92, al
+    ret
+
 ; --- [함수: 16비트 문자열 출력] ---
 print_string:
     mov ah, 0x0e
@@ -135,7 +151,7 @@ disk_error:
     call print_string
     jmp $                   ; 시스템 정지 (무한 루프)
 
-; --- [32비트 보호 모드 진입점] ---
+; --- [32비트 보호 모드 진입점 → 2단계 C 로더로 점프] ---
 [bits 32]
 init_pm:
     mov ax, 0x10
@@ -147,9 +163,9 @@ init_pm:
     mov ebp, 0x90000
     mov esp, ebp
 
-    ; 안전하게 레지스터를 통한 점프로 변경
-    mov eax, KERNEL_OFFSET
-    call eax                ; 0x10000 번지로 점프
+    ; 2단계 C 로더 (0x10000)로 점프
+    mov eax, LOADER_OFFSET
+    call eax
     jmp $
 
 ; --- [데이터 및 GDT 영역] ---
@@ -178,12 +194,12 @@ DAP:
 DAP_BUFFER_OFFSET:
     dw 0x0000               ; 메모리 오프셋 (항상 0)
 DAP_BUFFER_SEGMENT:
-    dw 0x0100               ; 초기 메모리 세그먼트 (0x0100:0x0000 -> 0x1000)
+    dw 0x1000               ; 초기 메모리 세그먼트 (0x1000:0x0000 -> 0x10000)
 DAP_START_LBA:
-    dd 1                    ; 시작 LBA (0번은 부트로더, 1번이 커널의 시작)
+    dd 1                    ; 시작 LBA (0번은 부트로더, 1번이 로더의 시작)
     dd 0                    ; LBA 상위 32비트 (2TB 이상일 때 쓰지만 우린 안 씀)
 
-MSG_LOAD      db "Booting ParinOS...", 0
+MSG_LOAD      db "ParinOS Stage1: Loading...", 0
 MSG_OK        db " OK", 13, 10, 0
 DISK_ERR      db 13, 10, "Disk Error! (AH=0x42)", 0
 
