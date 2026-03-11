@@ -339,8 +339,7 @@ void kprocess_exit(void) {
         if (tid < KTHREAD_MAX) {
             threads[tid].state = KTHREAD_ZOMBIE;
         } else {
-            kprintf("[SCHED] kprocess_exit: invalid tid=%d (data corruption?)
-", tid);
+            kprintf("[SCHED] kprocess_exit: invalid tid=%d (data corruption?)", tid);
         }
     }
     proc->state = KPROCESS_ZOMBIE;
