@@ -4,17 +4,17 @@
  * 디스크 레이아웃:
  *   LBA 0       : 1단계 부트로더 (boot.asm, 512바이트)
  *   LBA 1~128   : 2단계 C 로더 (loader.c, 64KB 영역)  ← 0x10000에 로드됨
- *   LBA 129~    : 실제 커널 (kernel.bin)               ← 0x1000000에 로드됨
+ *   LBA 129~    : 실제 커널 (kernel.bin)               ← 0x100000에 로드됨
  *
  * 역할:
- *   - ATA PIO 방식으로 LBA 129부터 커널을 읽어 0x1000000(16MB)에 적재
- *   - 커널 진입점 (0x1000000)으로 점프
+ *   - ATA PIO 방식으로 LBA 129부터 커널을 읽어 0x100000(1MB)에 적재
+ *   - 커널 진입점 (0x100000)으로 점프
  */
 
 /* 디스크/메모리 레이아웃 상수 */
 #define KERNEL_LBA_START    129         /* 커널 시작 LBA (로더 128섹터 이후) */
 #define KERNEL_SECTORS      256         /* 읽을 커널 섹터 수 (256 * 512 = 128KB) */
-#define KERNEL_LOAD_ADDR    0x1000000   /* 커널 로드 목적지: 16MB (0x1000000) */
+#define KERNEL_LOAD_ADDR    0x100000    /* 커널 로드 목적지: 1MB (0x100000) */
 
 /* ATA 포트 (Primary IDE, I/O 포트 0x1F0~0x1F7) */
 #define ATA_DATA_PORT       0x1F0
@@ -113,7 +113,7 @@ static int ata_read_sector(uint32_t lba, uint8_t *buf) {
 
 /* ─── 로더 메인 함수 ─── */
 void loader_main(void) {
-    vga_print("Stage2: Loading kernel to 0x1000000...");
+    vga_print("Stage2: Loading kernel to 0x100000...");
 
     uint8_t *dest = (uint8_t *)KERNEL_LOAD_ADDR;
 
@@ -131,7 +131,7 @@ void loader_main(void) {
 
     vga_print(" OK\n");
 
-    /* 커널 진입점 (0x1000000)으로 점프 */
+    /* 커널 진입점 (0x100000)으로 점프 */
     typedef void (*kernel_entry_t)(void);
     kernel_entry_t kernel_entry = (kernel_entry_t)KERNEL_LOAD_ADDR;
     kernel_entry();
