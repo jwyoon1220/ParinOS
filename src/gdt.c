@@ -47,6 +47,10 @@ void init_gdt(void) {
     // 5. TSS (Task State Segment) 디스크립터 (오프셋 0x28, Ring 0)
     //    Access: 0x89 = Present, DPL=0, S=0(System), Type=1001(32-bit TSS Available)
     //    Granularity: 0x00 (바이트 단위, 4KB 아님)
+    //    Limit: sizeof(tss_entry_t) - 1 (I/O 비트맵 없음 — tss.iomap_base가
+    //    TSS 한계를 초과하면 CPU가 모든 I/O 포트 접근을 Ring 3에서 금지함.
+    //    Intel 매뉴얼 Vol.3 §19.5.2: "I/O bit map base >= segment limit+1"인
+    //    경우 I/O 비트맵이 없는 것으로 처리됩니다.)
     tss_init();
     gdt_set_gate(5, (uint32_t)&tss, sizeof(tss_entry_t) - 1, 0x89, 0x00);
 

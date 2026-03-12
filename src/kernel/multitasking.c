@@ -129,7 +129,9 @@ static uint32_t setup_user_initial_stack(uint8_t* kstack_base,
     // Ring 3 iret 프레임: CPU는 iret 시 CS.CPL=3을 보고 SS_user, ESP_user도 팝
     *(--sp) = 0x23;              // SS_user: 유저 데이터 세그먼트 (RPL=3)
     *(--sp) = user_esp;          // ESP_user: 유저 스택 포인터
-    *(--sp) = 0x00000202;        // EFLAGS: IF=1 (인터럽트 허용), IOPL=0
+    // EFLAGS: IF(bit9)=1(인터럽트 허용), IOPL(bits13-12)=0(Ring 3에서 직접 I/O 금지)
+    // 비트 1(Reserved, 항상 1)도 포함: 0x202 = 0000 0010 0000 0010
+    *(--sp) = 0x00000202;
     *(--sp) = 0x1B;              // CS_user: 유저 코드 세그먼트 (RPL=3)
     *(--sp) = (uint32_t)entry;   // EIP: 유저 진입점
 

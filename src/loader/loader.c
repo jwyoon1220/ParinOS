@@ -138,6 +138,21 @@ static uint32_t get_kernel_sectors(void) {
     return sectors;
 }
 
+/* ─── 부호 없는 정수를 십진 문자열로 변환하여 출력 ─── */
+static void lkprint_uint32(uint32_t n) {
+    char tmp[12];
+    int j = 0;
+    if (n == 0) {
+        lkputchar('0');
+        return;
+    }
+    while (n > 0) {
+        tmp[j++] = '0' + (int)(n % 10);
+        n /= 10;
+    }
+    while (j > 0) lkputchar(tmp[--j]);
+}
+
 /* ─── 로더 메인 ─── */
 void loader_main(void) {
     serial_init();
@@ -147,22 +162,7 @@ void loader_main(void) {
     uint32_t kernel_sectors = get_kernel_sectors();
 
     lkprint("Loading kernel to 0x100000 (");
-    /* 섹터 수를 십진수로 출력 */
-    {
-        char buf[12];
-        int i = 0;
-        uint32_t n = kernel_sectors;
-        if (n == 0) {
-            buf[i++] = '0';
-        } else {
-            char tmp[12];
-            int j = 0;
-            while (n > 0) { tmp[j++] = '0' + (n % 10); n /= 10; }
-            while (j > 0) buf[i++] = tmp[--j];
-        }
-        buf[i] = '\0';
-        lkprint(buf);
-    }
+    lkprint_uint32(kernel_sectors);
     lkprint(" sectors)...");
 
     uint8_t *dest = (uint8_t *)KERNEL_LOAD_ADDR;

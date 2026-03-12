@@ -65,6 +65,19 @@ static void setup_user_mode_demo(void) {
     uint8_t* code = (uint8_t*)USER_CODE_VADDR;
     uint32_t msg_addr = USER_MSG_VADDR;
 
+    // 오프셋 32: 메시지 문자열 (null-terminated)
+    const char *msg = "Hello from Ring 3!\n";
+    uint8_t* msgptr = code + 32;
+    int msg_len = 0;
+    while (msg[msg_len] != '\0') {
+        msgptr[msg_len] = (uint8_t)msg[msg_len];
+        msg_len++;
+    }
+    msgptr[msg_len] = '\0';  // null terminator
+
+    // 메시지 길이를 코드에 인라인으로 인코딩 (mov ecx, msg_len)
+    uint8_t ml = (uint8_t)msg_len;
+
     // mov eax, 1  →  B8 01 00 00 00
     code[0] = 0xB8; code[1] = 0x01; code[2] = 0x00; code[3] = 0x00; code[4] = 0x00;
     // mov ebx, msg_addr  →  BB [4바이트 주소]
@@ -73,8 +86,8 @@ static void setup_user_mode_demo(void) {
     code[7]  = (uint8_t)(msg_addr >> 8);
     code[8]  = (uint8_t)(msg_addr >> 16);
     code[9]  = (uint8_t)(msg_addr >> 24);
-    // mov ecx, 23  →  B9 17 00 00 00
-    code[10] = 0xB9; code[11] = 23; code[12] = 0x00; code[13] = 0x00; code[14] = 0x00;
+    // mov ecx, msg_len  →  B9 [4바이트 값]
+    code[10] = 0xB9; code[11] = ml; code[12] = 0x00; code[13] = 0x00; code[14] = 0x00;
     // int 0x80  →  CD 80
     code[15] = 0xCD; code[16] = 0x80;
     // mov eax, 0  →  B8 00 00 00 00
@@ -85,11 +98,6 @@ static void setup_user_mode_demo(void) {
     code[24] = 0xCD; code[25] = 0x80;
     // jmp $  →  EB FE
     code[26] = 0xEB; code[27] = 0xFE;
-
-    // 오프셋 32: 메시지 (23바이트, null-terminated)
-    const char *msg = "Hello from Ring 3!\n\0\0\0\0";
-    uint8_t* msgptr = code + 32;
-    for (int i = 0; i < 23; i++) msgptr[i] = (uint8_t)msg[i];
 
     // ── 유저 스레드 생성 ─────────────────────────────────────────────────────
     int tid = kcreate_user_thread("user_demo",
