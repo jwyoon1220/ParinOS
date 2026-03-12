@@ -11,6 +11,8 @@
 #include "../util/util.h"
 #include "../kernel/multitasking.h"
 #include "../mem/vmm.h"
+#include "../elf/elf.h"
+#include "../std/kstd.h"
 
 char* cmd_buf = NULL;
 int cmd_idx = 0;
@@ -120,7 +122,28 @@ void process_command() {
     else if (strcmp(cmd_buf, "ls") == 0) {
         fs_ls("/0/"); // 일단 루트 디렉터리 고정 출력
     }
-    else if (strncmp(cmd_buf, "cat ", 4) == 0) {
+    else if (strncmp(cmd_buf, "run ", 4) == 0) {
+        char* target_path = cmd_buf + 4; // "run " 이후의 문자열
+
+        // 앞쪽 공백 건너뛰기
+        while (*target_path == ' ') target_path++;
+
+        // 뒤쪽 공백 제거 (기존에 구현하신 함수 활용)
+        trim_spaces(target_path);
+
+        if (strlen(target_path) > 0) {
+            kprintf("Loading '%s'...\n", target_path);
+
+            // elf.c에 구현된 실행 함수 호출
+            if (elf_execute_from_path(target_path) == RUN_SUCCESS) {
+                kprintf("\nProgram '%s' finished successfully.\n", target_path);
+            } else {
+                kprintf("\nFailed to execute '%s'.\n", target_path);
+            }
+        } else {
+            kprintf("Usage: run <filepath>\n");
+        }
+    } else if (strncmp(cmd_buf, "cat ", 4) == 0) {
         // "cat /0/note.txt" 처럼 입력받으므로 공백 이후의 경로를 전달
 
         char* redir_ptr = strchr(cmd_buf, '>');

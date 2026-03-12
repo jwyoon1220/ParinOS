@@ -1,14 +1,16 @@
 CC = i686-linux-gnu-gcc
 AS = nasm
 LD = i686-linux-gnu-ld
-
+NM = i686-linux-gnu-nm
+IMAGE = $(BUILD_DIR)/ParinOS.img
+KERNEL_SYM = kernel.sym
+INC_DEST = include  # 🌟 이 변수가 상단에 확실히 정의되어 있어야 합니다.
 SRC_DIR = src
 ASM_DIR = $(SRC_DIR)/asm
 LOADER_DIR = $(SRC_DIR)/loader
 BUILD_DIR = makefile-build
 
 CFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables
-# 🌟 링커 스크립트를 사용하도록 수정 (Ttext 삭제)
 LDFLAGS        = -m elf_i386 -nostdlib -no-pie -T kernel.ld
 LDFLAGS_LOADER = -m elf_i386 -nostdlib -no-pie -T loader.ld
 
@@ -24,12 +26,11 @@ ASM_OBJECTS      = $(patsubst $(ASM_DIR)/%.asm, $(BUILD_DIR)/%_asm.o,  $(ASM_SOU
 LOADER_C_OBJECTS = $(patsubst $(LOADER_DIR)/%.c, $(BUILD_DIR)/loader/%.o, $(LOADER_C_SOURCES))
 
 IMAGE = $(BUILD_DIR)/ParinOS.img
+KERNEL_SYM = kernel.sym  # 🌟 커널 심볼 테이블 파일 이름
 
-# 2단계 로더 크기: 64KB = 128섹터 (LBA 1~128)
-# 커널은 LBA 129부터 시작 (loader.c의 KERNEL_LBA_START와 일치)
 LOADER_PAD_SIZE = 65536
 
-all: $(IMAGE)
+all: $(IMAGE) $(KERNEL_SYM) # 🌟 빌드 시 심볼 파일도 생성하도록 설정
 
 prep:
 	@mkdir -p $(BUILD_DIR)
@@ -46,12 +47,11 @@ $(BUILD_DIR)/loader_entry.o: $(ASM_DIR)/loader_entry.asm | prep
 $(BUILD_DIR)/kernel_entry.o: $(ASM_DIR)/kernel_entry.asm | prep
 	$(AS) -f elf32 $< -o $@
 
-# C 파일 컴파일 (커널)
+# C 파일 컴파일
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | prep
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# C 파일 컴파일 (로더)
 $(BUILD_DIR)/loader/%.o: $(LOADER_DIR)/%.c | prep
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -61,30 +61,42 @@ $(BUILD_DIR)/%_asm.o: $(ASM_DIR)/%.asm | prep
 	@mkdir -p $(dir $@)
 	$(AS) -f elf32 $< -o $@
 
-# 🌟 2단계 C 로더 링크 → 64KB로 패딩 (LBA 1~128)
+# 2단계 C 로더 링크
 $(BUILD_DIR)/loader.bin: $(BUILD_DIR)/loader_entry.o $(LOADER_C_OBJECTS)
 	$(LD) $(LDFLAGS_LOADER) $^ --oformat binary -o $@
 	truncate -s $(LOADER_PAD_SIZE) $@
 
-# 🌟 최종 커널 링크 (kernel.ld의 규칙을 따름)
-# ld가 $^를 나열할 때 kernel_entry.o가 가장 먼저 오도록 보장해야 합니다.
-$(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(ASM_OBJECTS)
-	$(LD) $(LDFLAGS) $^ --oformat binary -o $@
+# 🌟 최종 커널 링크 및 심볼 추출
+# 먼저 ELF 형태로 링크한 뒤, 거기서 바이너리를 추출하고 심볼도 뽑아냅니다.
+$(BUILD_DIR)/kernel.elf: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(ASM_OBJECTS)
+	$(LD) $(LDFLAGS) $^ -o $@
 
-# 🌟 디스크 이미지 생성:
-#   LBA 0       : boot.bin  (512바이트, 1섹터)
-#   LBA 1~128   : loader.bin (64KB = 128섹터)
-#   LBA 129~    : kernel.bin
+$(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel.elf
+	objcopy -O binary $< $@
+
+# 🌟 커널 심볼 테이블 생성 (테스트 프로그램 링킹용)
+$(KERNEL_SYM): $(BUILD_DIR)/kernel.elf
+	@echo "Generating kernel symbol table..."
+	$(NM) $< | awk '{ if($$2 == "T" || $$2 == "D" || $$2 == "B") print $$3 " = 0x" $$1 ";" }' > $@
+
 $(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.bin
 	cat $^ > $@
-	# 1mb
 	truncate -s 1048576  $@
 
 run:
 	$(MAKE) clean
 	$(MAKE) all
+	$(MAKE) headers
 	clear
 	qemu-system-i386 -m 256M -drive file=makefile-build/ParinOS.img -drive id=disk0,file=disk.img,if=none,format=raw -device ahci,id=ahci -serial stdio -device ide-hd,drive=disk0,bus=ahci.0
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(KERNEL_SYM)
+
+.PHONY: headers all prep run clean
+
+headers:
+	@mkdir -p $(INC_DEST)
+	@echo "Copying header files to $(INC_DEST)..."
+	@cd $(SRC_DIR) && find . -name "*.h" -exec cp --parents \{\} ../$(INC_DEST)/ \;
+	@echo "Done."

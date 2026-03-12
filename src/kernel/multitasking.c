@@ -143,7 +143,7 @@ void init_multitasking(void) {
     processes[0].state        = KPROCESS_RUNNING;
     processes[0].thread_count = 1;
     processes[0].thread_ids[0] = 0;
-    copy_name(processes[0].name, "kernel", sizeof(processes[0].name));
+    copy_name(processes[0].name, "System", sizeof(processes[0].name));
 
     // 커널 메인 스레드 (TID 0) 등록
     // 실제 ESP 는 첫 번째 타이머 인터럽트에서 저장됨
@@ -154,7 +154,7 @@ void init_multitasking(void) {
     threads[0].stack            = NULL; // 부트 스택 (kmalloc 으로 할당하지 않음)
     threads[0].stack_size       = 0;
     threads[0].sleep_until_tick = 0;
-    copy_name(threads[0].name, "ParinOS Main Thread", sizeof(threads[0].name));
+    copy_name(threads[0].name, "kmain", sizeof(threads[0].name));
 
     current_tid = 0;
     current_pid = 0;
@@ -179,7 +179,7 @@ int kcreate_thread(const char* name, void (*entry)(void), uint32_t stack_size) {
     int slot = alloc_thread_slot();
     if (slot < 0) {
         __asm__("sti");
-        kprintf("[SCHED] kcreate_thread: 스레드 슬롯 부족!\n");
+        kprintf("[SCHED] kcreate_thread: Out of Thread Slot\n");
         return -1;
     }
 
@@ -187,7 +187,7 @@ int kcreate_thread(const char* name, void (*entry)(void), uint32_t stack_size) {
     uint8_t* stack = (uint8_t*)kmalloc(stack_size);
     if (stack == NULL) {
         __asm__("sti");
-        kprintf("[SCHED] kcreate_thread: 스택 메모리 부족!\n");
+        kprintf("[SCHED] kcreate_thread: Out Of Stack Memory\n");
         return -1;
     }
 
@@ -290,7 +290,7 @@ int kcreate_process(const char* name, void (*entry)(void)) {
     if (tslot < 0) {
         processes[pslot].state = KPROCESS_UNUSED;
         __asm__("sti");
-        kprintf("[SCHED] kcreate_process: 스레드 슬롯 부족!\n");
+        kprintf("[SCHED] kcreate_process: Out of Thread Slot!\n");
         return -1;
     }
 
@@ -299,7 +299,7 @@ int kcreate_process(const char* name, void (*entry)(void)) {
     if (stack == NULL) {
         processes[pslot].state = KPROCESS_UNUSED;
         __asm__("sti");
-        kprintf("[SCHED] kcreate_process: 스택 메모리 부족!\n");
+        kprintf("[SCHED] kcreate_process: Out Of Stack Memory!\n");
         return -1;
     }
 
@@ -454,14 +454,13 @@ uint32_t scheduler_tick(uint32_t current_esp) {
 }
 
 void dump_multitasking_info(void) {
-    kprintf("\n--- ParinOS Process-Thread Tree ---\n");
+    kprintf("\n--- Task Viewer ---\n");
 
     for (int p = 0; p < KPROCESS_MAX; p++) {
         if (processes[p].state == KPROCESS_UNUSED) continue;
 
         const char* p_state = (processes[p].state == KPROCESS_RUNNING) ? "RUNNING" : "ZOMBIE";
 
-        // %-12s가 이제 정상 작동한다면:
         kprintf("[%d] %s (Status: %s)\n", processes[p].id, processes[p].name, p_state);
 
         for (uint32_t i = 0; i < processes[p].thread_count; i++) {
@@ -483,7 +482,6 @@ void dump_multitasking_info(void) {
             kprintf("%s [TID:%d] %s | %s | Stack: %p\n",
                     branch, t->id, t->name[0] ? t->name : "(null)", t_state, t->esp);
         }
-        kprintf(" |\n");
     }
     kprintf("-----------------------------------\n");
 }
