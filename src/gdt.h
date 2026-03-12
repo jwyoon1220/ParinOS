@@ -5,6 +5,13 @@
 
 #include <stdint.h>
 
+// GDT 세그먼트 선택자 상수 (바이트 오프셋, RPL 비트 포함)
+#define GDT_KERNEL_CODE_SEG  0x08   // 커널 코드 세그먼트 (Ring 0)
+#define GDT_KERNEL_DATA_SEG  0x10   // 커널 데이터 세그먼트 (Ring 0)
+#define GDT_USER_CODE_SEG    0x1B   // 유저 코드 세그먼트  (Ring 3, RPL=3)
+#define GDT_USER_DATA_SEG    0x23   // 유저 데이터 세그먼트(Ring 3, RPL=3)
+#define GDT_TSS_SEG          0x28   // TSS 선택자 (Ring 0)
+
 // GDT 엔트리 하나를 나타내는 구조체 (8바이트)
 struct gdt_entry_struct {
     uint16_t limit_low;   // Limit의 하위 16비트
@@ -14,7 +21,6 @@ struct gdt_entry_struct {
     uint8_t  granularity; // Limit의 상위 4비트 + 플래그 4비트
     uint8_t  base_high;   // Base의 상위 8비트
 };
-// (__attribute__((packed)) 부분은 삭제했습니다)
 typedef struct gdt_entry_struct gdt_entry_t;
 
 // CPU의 GDTR 레지스터에 로드될 포인터 구조체 (6바이트)
@@ -28,6 +34,6 @@ typedef struct gdt_ptr_struct gdt_ptr_t;
 #pragma pack(pop)
 
 // GDT 초기화 함수
-void init_gdt();
+void init_gdt(void);
 
 #endif

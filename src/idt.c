@@ -18,6 +18,7 @@ extern void idt_load(uint32_t idt_ptr_addr);
 extern void irq0_handler();
 extern void irq1_handler();
 extern void isr14_handler();
+extern void syscall_stub();
 
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
     idt[num].base_low = base & 0xFFFF;
@@ -43,6 +44,10 @@ void init_idt() {
     // IRQ0(타이머)와 IRQ1(키보드) 핸들러 등록
     idt_set_gate(32, (uint32_t)irq0_handler, 0x08, 0x8E);
     idt_set_gate(33, (uint32_t)irq1_handler, 0x08, 0x8E);
+
+    // int 0x80: 시스템 콜 게이트 (DPL=3 → 유저 모드에서 호출 가능)
+    // flags: 0xEE = Present(1), DPL(11=Ring3), S(0=System), Type(1110=32-bit Interrupt Gate)
+    idt_set_gate(0x80, (uint32_t)syscall_stub, 0x08, 0xEE);
 
     idt_load((uint32_t)&idt_ptr);
 }

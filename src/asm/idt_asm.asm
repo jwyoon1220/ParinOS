@@ -3,9 +3,11 @@
 global idt_load
 global irq0_handler
 global irq1_handler
+global syscall_stub
 
 extern keyboard_handler_main
 extern scheduler_tick
+extern do_syscall
 
 ; 1. IDT 로드 함수 (안전한 버전)
 idt_load:
@@ -118,4 +120,62 @@ isr14_handler:
 
     ; CPU가 push한 에러 코드를 스택에서 제거 (4바이트)
     add esp, 4
+    iretd
+
+; ─── int 0x80 시스템 콜 핸들러 ────────────────────────────────────────────────
+; 유저 모드(Ring 3)에서 int 0x80 호출 시 진입
+; CPU가 자동으로 커널 스택으로 전환 (TSS.esp0/ss0 사용)하고
+; SS_user, ESP_user, EFLAGS, CS_user, EIP_user를 커널 스택에 push
+;
+; 호출 규약:
+;   EAX = 시스템 콜 번호
+;   EBX = arg1, ECX = arg2, EDX = arg3
+;   반환값: EAX
+
+syscall_stub:
+    ; ── 레지스터 보존 (EAX는 반환값이므로 나중에 덮어씀) ──
+    push ebp
+    push esi
+    push edi
+    push ebx       ; arg1 저장
+    push ecx       ; arg2 저장
+    push edx       ; arg3 저장
+
+    ; ── 커널 데이터 세그먼트로 전환 ──
+    push ds
+    push es
+    push fs
+    push gs
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; ── do_syscall(syscall_num, arg1, arg2, arg3) 호출 ──
+    ; EAX, EBX, ECX, EDX는 push 이후에도 레지스터 값이 그대로 유지됨
+    push edx       ; arg3
+    push ecx       ; arg2
+    push ebx       ; arg1
+    push eax       ; syscall_num
+    call do_syscall
+    add esp, 16    ; 인자 스택 정리
+
+    ; EAX = do_syscall 반환값 (유저 프로그램으로 전달)
+
+    ; ── 세그먼트 복원 ──
+    pop gs
+    pop fs
+    pop es
+    pop ds
+
+    ; ── 보존했던 레지스터 복원 (스택 역순) ──
+    pop edx
+    pop ecx
+    pop ebx
+    pop edi
+    pop esi
+    pop ebp
+
+    ; iretd: EIP, CS, EFLAGS, ESP_user, SS_user 복원 (Ring 3으로 복귀)
     iretd

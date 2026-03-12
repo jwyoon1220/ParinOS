@@ -1,4 +1,5 @@
 global gdt_flush    ; C 코드에서 이 함수를 찾을 수 있도록 global로 선언합니다.
+global tss_flush    ; TSS 로드 함수 (ltr 명령)
 
 gdt_flush:
     ; 1. C 함수에서 넘어온 첫 번째 인자(gdt_ptr의 주소)를 가져옵니다.
@@ -27,4 +28,11 @@ gdt_flush:
 .flush:
     ; 파이프라인이 비워지고 CS가 0x08로 갱신되었습니다.
     ; 이제 C 언어 코드로 다시 돌아갑니다.
+    ret
+
+tss_flush:
+    ; TSS 선택자를 TR(Task Register)에 로드합니다.
+    ; 첫 번째 인자 (uint16_t sel) 는 스택의 [esp+4]에 있습니다.
+    mov ax, [esp+4]
+    ltr ax
     ret
