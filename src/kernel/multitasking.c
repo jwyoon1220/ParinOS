@@ -13,6 +13,7 @@
 #include "../io.h"
 #include "../drivers/timer.h"
 #include "../mem/mem.h"
+#include "tss.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  내부 전역 변수
@@ -106,7 +107,53 @@ static uint32_t setup_initial_stack(uint8_t* stack_base,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  프로세스 슬롯 할당 헬퍼
+//  유저 스레드용 초기 커널 스택 프레임 설정
+//
+//  irq0_handler가 복원하는 스택 레이아웃 (Ring 3 → Ring 0 인터럽트 기준):
+//   [DS]           ← ESP가 가리키는 위치 (pop eax; mov ds, ax)
+//   [EDI..EAX]     ← popa로 복원 (8개 레지스터)
+//   [int_no]       ← add esp, 8 로 건너뜀
+//   [err_code]
+//   [EIP]          ← iret이 복원: EIP, CS, EFLAGS (Ring 3용: + ESP_user, SS_user)
+//   [CS=0x1B]      ← 유저 코드 세그먼트 (CPL=3)
+//   [EFLAGS]
+//   [ESP_user]     ← Ring 3에서 인터럽트 발생 시 CPU가 추가로 push
+//   [SS_user=0x23] ← 유저 스택 세그먼트 (CPL=3)
+// ─────────────────────────────────────────────────────────────────────────────
+static uint32_t setup_user_initial_stack(uint8_t* kstack_base,
+                                         uint32_t kstack_size,
+                                         void (*entry)(void),
+                                         uint32_t user_esp) {
+    uint32_t* sp = (uint32_t*)(kstack_base + kstack_size);
+
+    // Ring 3 iret 프레임: CPU는 iret 시 CS.CPL=3을 보고 SS_user, ESP_user도 팝
+    *(--sp) = 0x23;              // SS_user: 유저 데이터 세그먼트 (RPL=3)
+    *(--sp) = user_esp;          // ESP_user: 유저 스택 포인터
+    // EFLAGS: IF(bit9)=1(인터럽트 허용), IOPL(bits13-12)=0(Ring 3에서 직접 I/O 금지)
+    // 비트 1(Reserved, 항상 1)도 포함: 0x202 = 0000 0010 0000 0010
+    *(--sp) = 0x00000202;
+    *(--sp) = 0x1B;              // CS_user: 유저 코드 세그먼트 (RPL=3)
+    *(--sp) = (uint32_t)entry;   // EIP: 유저 진입점
+
+    // irq0_handler가 add esp,8로 건너뛰는 필드
+    *(--sp) = IRQ0_INT_NUM;      // int_no
+    *(--sp) = 0;                 // err_code (더미)
+
+    // pusha 순서대로 레지스터 저장 (popa 복원 순서: EDI, ESI, EBP, skip ESP, EBX, EDX, ECX, EAX)
+    *(--sp) = 0; // EAX
+    *(--sp) = 0; // ECX
+    *(--sp) = 0; // EDX
+    *(--sp) = 0; // EBX
+    *(--sp) = 0; // ESP (popa가 무시)
+    *(--sp) = 0; // EBP
+    *(--sp) = 0; // ESI
+    *(--sp) = 0; // EDI
+
+    // DS: irq0_handler가 pop eax; mov ds, ax 로 복원
+    *(--sp) = 0x10; // 커널 데이터 세그먼트
+
+    return (uint32_t)sp;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 static int alloc_process_slot(void) {
     for (int i = 0; i < KPROCESS_MAX; i++) {
@@ -202,6 +249,8 @@ int kcreate_thread(const char* name, void (*entry)(void), uint32_t stack_size) {
     threads[slot].stack            = stack;
     threads[slot].stack_size       = stack_size;
     threads[slot].sleep_until_tick = 0;
+    threads[slot].is_user          = 0;
+    threads[slot].kernel_stack_top = 0;
     copy_name(threads[slot].name, name, sizeof(threads[slot].name));
 
     // 부모 프로세스에 스레드 등록
@@ -313,6 +362,8 @@ int kcreate_process(const char* name, void (*entry)(void)) {
     threads[tslot].stack            = stack;
     threads[tslot].stack_size       = DEFAULT_STACK_SIZE;
     threads[tslot].sleep_until_tick = 0;
+    threads[tslot].is_user          = 0;
+    threads[tslot].kernel_stack_top = 0;
     copy_name(threads[tslot].name, name, sizeof(threads[tslot].name));
 
     // 프로세스에 메인 스레드 등록
@@ -324,6 +375,60 @@ int kcreate_process(const char* name, void (*entry)(void)) {
     kprintf("[SCHED] Process '%s' (pid=%d, main_tid=%d) created\n",
             processes[pslot].name, pslot, tslot);
     return pslot;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  kcreate_user_thread
+//  유저 모드(Ring 3) 스레드를 생성합니다.
+//  커널 스택을 할당하고, irq0_handler가 iret으로 Ring 3에 진입하는
+//  초기 프레임을 설정합니다.
+// ─────────────────────────────────────────────────────────────────────────────
+int kcreate_user_thread(const char* name, void (*entry)(void), uint32_t user_esp) {
+    if (entry == NULL || user_esp == 0) return -1;
+
+    __asm__("cli");
+
+    int slot = alloc_thread_slot();
+    if (slot < 0) {
+        __asm__("sti");
+        kprintf("[SCHED] kcreate_user_thread: Out of Thread Slot\n");
+        return -1;
+    }
+
+    // 커널 스택 할당 (Ring 3 → Ring 0 인터럽트 시 CPU가 사용)
+    uint8_t* kstack = (uint8_t*)kmalloc(DEFAULT_STACK_SIZE);
+    if (kstack == NULL) {
+        __asm__("sti");
+        kprintf("[SCHED] kcreate_user_thread: Out of Kernel Stack Memory\n");
+        return -1;
+    }
+
+    uint32_t kernel_stack_top = (uint32_t)(kstack + DEFAULT_STACK_SIZE);
+    uint32_t initial_esp = setup_user_initial_stack(kstack, DEFAULT_STACK_SIZE,
+                                                     entry, user_esp);
+
+    threads[slot].id               = (uint32_t)slot;
+    threads[slot].pid              = current_pid;
+    threads[slot].state            = KTHREAD_READY;
+    threads[slot].esp              = initial_esp;
+    threads[slot].stack            = kstack;
+    threads[slot].stack_size       = DEFAULT_STACK_SIZE;
+    threads[slot].sleep_until_tick = 0;
+    threads[slot].is_user          = 1;
+    threads[slot].kernel_stack_top = kernel_stack_top;
+    copy_name(threads[slot].name, name, sizeof(threads[slot].name));
+
+    // 부모 프로세스에 스레드 등록
+    kprocess_t* proc = &processes[current_pid];
+    if (proc->thread_count < MAX_THREADS_PER_PROCESS) {
+        proc->thread_ids[proc->thread_count++] = (uint32_t)slot;
+    }
+
+    __asm__("sti");
+
+    kprintf("[SCHED] User thread '%s' (tid=%d, entry=0x%x, user_esp=0x%x) created\n",
+            name ? name : "(null)", slot, (uint32_t)entry, user_esp);
+    return slot;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -449,7 +554,13 @@ uint32_t scheduler_tick(uint32_t current_esp) {
     current_tid = next;
     current_pid = threads[current_tid].pid;
 
-    // 10. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
+    // 10. 유저 스레드로 전환 시 TSS.esp0 갱신
+    //     Ring 3에서 인터럽트 발생 시 CPU가 이 주소를 커널 스택 초기 포인터로 사용
+    if (threads[current_tid].is_user) {
+        tss_set_kernel_stack(threads[current_tid].kernel_stack_top);
+    }
+
+    // 11. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
     return threads[current_tid].esp;
 }
 

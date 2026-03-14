@@ -50,6 +50,8 @@ typedef struct {
     uint8_t*        stack;            // 스택 기저 주소 (kmalloc으로 할당)
     uint32_t        stack_size;       // 스택 크기
     uint32_t        sleep_until_tick; // 이 틱 이후에 깨어남 (SLEEPING 상태 전용)
+    uint8_t         is_user;          // 1 = Ring 3 유저 스레드 (0 = 커널 스레드)
+    uint32_t        kernel_stack_top; // 커널 스택 상단 주소 (TSS.esp0 갱신용, 유저 스레드 전용)
 } kthread_t;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +133,19 @@ int kthread_id(void);
  * @return 성공 시 프로세스 ID (>= 0), 실패 시 -1
  */
 int kcreate_process(const char* name, void (*entry)(void));
+
+/**
+ * 새 유저 모드(Ring 3) 스레드를 생성합니다.
+ *
+ * @param name       스레드 이름 (디버깅용, NULL 허용)
+ * @param entry      유저 코드 진입점 가상 주소 (Ring 3에서 실행됨)
+ * @param user_esp   유저 스택 포인터 (유저 스택 최상단 주소)
+ * @return 성공 시 스레드 ID (>= 0), 실패 시 -1
+ *
+ * 유저 스레드는 int 0x80 시스템 콜을 통해 커널과 통신합니다.
+ * 종료 시 SYS_EXIT(0) 시스템 콜을 호출해야 합니다.
+ */
+int kcreate_user_thread(const char* name, void (*entry)(void), uint32_t user_esp);
 
 /**
  * 현재 프로세스 및 소속 스레드를 모두 종료합니다.

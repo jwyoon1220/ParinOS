@@ -81,6 +81,15 @@ $(KERNEL_SYM): $(BUILD_DIR)/kernel.elf
 
 $(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.bin
 	cat $^ > $@
+	@python3 -c "\
+import math, struct, os; \
+sz = os.path.getsize('$(BUILD_DIR)/kernel.bin'); \
+sectors = math.ceil(sz / 512); \
+f = open('$@', 'r+b'); \
+f.seek(512 + $(LOADER_PAD_SIZE) - 4); \
+f.write(struct.pack('<I', sectors)); \
+f.close(); \
+print('[LOADER] kernel.bin: {} bytes → {} sectors (written to 0x1FFFC)'.format(sz, sectors))"
 	truncate -s 1048576  $@
 
 run:

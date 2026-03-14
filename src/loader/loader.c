@@ -5,8 +5,14 @@
 
 /* 디스크/메모리 레이아웃 상수 */
 #define KERNEL_LBA_START    129         /* 커널 시작 LBA */
-#define KERNEL_SECTORS      1024         /* 읽을 커널 섹터 수 */
 #define KERNEL_LOAD_ADDR    0x100000    /* 커널 로드 목적지: 1MB */
+
+/* 동적 커널 섹터 수 관련 상수 */
+/* Makefile이 이미지 빌드 시 로더 영역의 마지막 4바이트에 실제 커널 섹터 수를 기록함 */
+/* 물리 주소: 0x10000 (로더 시작) + 65536 - 4 = 0x1FFFC                            */
+#define KERNEL_META_ADDR    ((volatile uint32_t *)0x1FFFC)
+#define KERNEL_SECTORS_MAX  4096U   /* 안전 상한: 2MB */
+#define KERNEL_SECTORS_DEF  1024U   /* 메타데이터가 유효하지 않을 때 폴백 값 */
 
 /* I/O 포트 정의 */
 #define ATA_DATA_PORT       0x1F0
@@ -121,19 +127,49 @@ static int ata_read_sector(uint32_t lba, uint8_t *buf) {
     return 0;
 }
 
+/* ─── 동적 커널 섹터 수 결정 ─── */
+/* Makefile이 이미지에 기록한 실제 커널 크기(섹터 단위)를 읽어 반환 */
+static uint32_t get_kernel_sectors(void) {
+    uint32_t sectors = *KERNEL_META_ADDR;
+    if (sectors == 0 || sectors > KERNEL_SECTORS_MAX) {
+        /* 메타데이터가 없거나 범위를 벗어나면 기본값 사용 */
+        return KERNEL_SECTORS_DEF;
+    }
+    return sectors;
+}
+
+/* ─── 부호 없는 정수를 십진 문자열로 변환하여 출력 ─── */
+static void lkprint_uint32(uint32_t n) {
+    char tmp[12];
+    int j = 0;
+    if (n == 0) {
+        lkputchar('0');
+        return;
+    }
+    while (n > 0) {
+        tmp[j++] = '0' + (int)(n % 10);
+        n /= 10;
+    }
+    while (j > 0) lkputchar(tmp[--j]);
+}
+
 /* ─── 로더 메인 ─── */
 void loader_main(void) {
     serial_init();
 
     lkprint("ParinOS Stage 2 Loader Online\n");
-    lkprint("Loading kernel to 0x100000...");
+
+    uint32_t kernel_sectors = get_kernel_sectors();
+
+    lkprint("Loading kernel to 0x100000 (");
+    lkprint_uint32(kernel_sectors);
+    lkprint(" sectors)...");
 
     uint8_t *dest = (uint8_t *)KERNEL_LOAD_ADDR;
 
-    for (int i = 0; i < KERNEL_SECTORS; i++) {
-        if (ata_read_sector(KERNEL_LBA_START + i, dest + (uint32_t)i * 512U) != 0) {
-            lkprint("\n[DISK ERROR at LBA ");
-            // 에러 시 무한 루프
+    for (uint32_t i = 0; i < kernel_sectors; i++) {
+        if (ata_read_sector(KERNEL_LBA_START + i, dest + i * 512U) != 0) {
+            lkprint("\n[DISK ERROR at sector]\n");
             for (;;) ;
         }
 
@@ -142,7 +178,7 @@ void loader_main(void) {
 
     lkprint(" OK.\nJumping to kernel...\n");
 
-    // 1MB 영역으로 점프
+    /* 1MB 영역으로 점프 */
     typedef void (*kernel_entry_t)(void);
     kernel_entry_t kernel_entry = (kernel_entry_t)KERNEL_LOAD_ADDR;
     kernel_entry();
