@@ -417,6 +417,11 @@ vmm_result_t vmm_alloc_virtual_pages(uint32_t vaddr, uint32_t count, vmm_alloc_t
         }
 
         vmm_result_t result = vmm_map_page(vaddr + i * PAGE_SIZE, (uint32_t)paddr, flags);
+        if (result == VMM_ERROR_ALREADY_MAPPED) {
+            // 이미 매핑된 페이지는 건너뜀 (롤백하지 않음)
+            pmm_free_frame(paddr);
+            continue;
+        }
         if (result != VMM_SUCCESS) {
             pmm_free_frame(paddr);
             // 롤백
@@ -532,6 +537,10 @@ void page_fault_handler(uint32_t error_code) {
                 return; // 성공적으로 처리됨
             }
             pmm_free_frame(pframe);
+            if (result == VMM_ERROR_ALREADY_MAPPED) {
+                // 이미 매핑된 페이지 - 정상 처리
+                return;
+            }
         }
 
         kprintf("[VMM] Failed to allocate page for heap\n");
