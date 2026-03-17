@@ -6,13 +6,25 @@
  *   0x10000 - 0x1FFFF : Stage2 로더 코드 (64KB)
  *   0x90000           : 스택 (boot.asm에서 설정)
  *   0x100000+         : 커널 세그먼트 로드 목적지 (PT_LOAD p_paddr)
- *   0x200000+         : kernel.elf 임시 버퍼 (512KB, 커널과 겹치지 않음)
+ *   0x200000+         : kernel.elf 임시 버퍼 (최대 1MB, 커널과 겹치지 않음)
  */
 
 /* 디스크/메모리 레이아웃 상수 */
 #define KERNEL_LBA_START    129         /* 커널 ELF 시작 LBA */
-#define KERNEL_SECTORS      1024        /* 읽을 최대 섹터 수 (512KB) */
 #define ELF_TEMP_ADDR       0x200000    /* kernel.elf 임시 버퍼 주소 (2MB) */
+/* ELF 임시 버퍼 최대 크기 (1MB): 디스크 이미지 전체가 1MB이므로 이 이상 필요 없음 */
+#define ELF_BUF_MAX         0x100000
+
+/* 로더 오류 코드 */
+#define LERR_DISK           -1  /* ATA 디스크 읽기 오류 */
+#define LERR_NOT_ELF        -2  /* ELF 매직 불일치 */
+#define LERR_NOT_ELF32      -3  /* ELFCLASS32 아님 */
+#define LERR_NOT_LSB        -4  /* 리틀엔디안 아님 */
+#define LERR_NOT_386        -5  /* EM_386 아님 */
+#define LERR_NO_PHDRS       -6  /* 프로그램 헤더 없음 */
+#define LERR_BAD_MEMSZ      -7  /* p_memsz < p_filesz */
+#define LERR_BUF_OVERFLOW   -8  /* ELF이 버퍼를 초과 */
+#define LERR_NO_LOAD_SEG    -9  /* PT_LOAD 세그먼트 없음 */
 
 /* ELF32 관련 상수 (ELF 표준 스펙) */
 #define EI_MAG0             0
@@ -202,30 +214,108 @@ static int ata_read_sector(uint32_t lba, uint8_t *buf) {
 }
 
 /*
- * load_kernel_image - 디스크에서 kernel.elf를 out_buf에 읽어 들인다.
+ * load_kernel_image - ELF 헤더를 파싱하여 실제 필요한 섹터만 읽는다.
  *
- * out_buf  : ELF 파일 전체를 저장할 버퍼 (ELF_TEMP_ADDR)
- * max      : 버퍼 최대 크기 (KERNEL_SECTORS * 512)
+ * 정적으로 고정된 섹터 수를 쓰지 않고, 다음 4단계로 필요한 만큼만 읽는다:
  *
- * 반환값: 0=성공, -1=디스크 오류
+ *   Phase 1) 첫 섹터(512B)를 읽어 ELF 헤더 기본 정보 확보 및 매직 확인
+ *   Phase 2) 프로그램 헤더 테이블 전체가 버퍼에 들어올 때까지 추가 섹터 읽기
+ *   Phase 3) PT_LOAD 세그먼트를 스캔하여 필요한 파일 범위(최대 p_offset+p_filesz) 계산
+ *   Phase 4) 그 범위까지만 나머지 섹터를 읽음 → 불필요한 섹터 읽기 없음
+ *
+ * out_buf   : ELF 파일 내용을 저장할 버퍼 (ELF_TEMP_ADDR)
+ * buf_max   : 버퍼 최대 크기 (ELF_BUF_MAX); 이를 초과하면 오류 처리
+ *
+ * 반환값: 0=성공, 음수=실패
  *
  * 주의: 나중에 FAT32 파일 로딩으로 교체할 때는 이 함수만 수정하면 된다.
  */
-static int load_kernel_image(void *out_buf, uint32_t max) {
+static int load_kernel_image(void *out_buf, uint32_t buf_max) {
     uint8_t *buf = (uint8_t *)out_buf;
-    uint32_t sectors = max / 512;
-    uint32_t i;
+    uint32_t sectors_read = 0;
 
-    for (i = 0; i < sectors; i++) {
-        if (ata_read_sector((uint32_t)(KERNEL_LBA_START + i),
-                            buf + i * 512U) != 0) {
-            lkprint("\n[DISK ERROR] LBA=");
-            lkprint_hex((uint32_t)(KERNEL_LBA_START + i));
-            lkprint("\n");
-            return -1;
-        }
-        if ((i & 0x3F) == 0) lkputchar('.');
+    /* ── Phase 1: 첫 섹터 읽기 (ELF 헤더 포함) ── */
+    if (ata_read_sector(KERNEL_LBA_START, buf) != 0) {
+        lkprint("\n[DISK ERROR] LBA=");
+        lkprint_hex(KERNEL_LBA_START);
+        lkprint("\n");
+        return LERR_DISK;
     }
+    sectors_read = 1;
+    lkputchar('.');
+
+    /* ELF 매직 빠른 확인: 잘못된 이미지를 일찍 걸러낸다 */
+    Elf32_Ehdr *ehdr = (Elf32_Ehdr *)buf;
+    if (ehdr->e_ident[EI_MAG0] != ELFMAG0 ||
+        ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
+        ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
+        ehdr->e_ident[EI_MAG3] != ELFMAG3) {
+        lkprint("\n[DISK] LBA 129 does not contain an ELF file\n");
+        return LERR_NOT_ELF;
+    }
+
+    /* ── Phase 2: 프로그램 헤더 테이블 전체가 버퍼에 들어올 때까지 읽기 ── */
+    /* e_phoff + e_phnum * e_phentsize 바이트까지 커버해야 한다 */
+    uint32_t ph_table_end = ehdr->e_phoff +
+                            (uint32_t)ehdr->e_phnum * (uint32_t)ehdr->e_phentsize;
+    uint32_t ph_sectors = (ph_table_end + 511U) / 512U; /* ceil */
+
+    while (sectors_read < ph_sectors) {
+        if (sectors_read * 512U >= buf_max) {
+            lkprint("\n[ELF ERROR] Program header table exceeds buffer\n");
+            return LERR_BUF_OVERFLOW;
+        }
+        if (ata_read_sector(KERNEL_LBA_START + sectors_read,
+                            buf + sectors_read * 512U) != 0) {
+            lkprint("\n[DISK ERROR] LBA=");
+            lkprint_hex(KERNEL_LBA_START + sectors_read);
+            lkprint("\n");
+            return LERR_DISK;
+        }
+        sectors_read++;
+    }
+
+    /* ── Phase 3: PT_LOAD 스캔 → 필요한 파일 끝 주소 계산 ── */
+    Elf32_Phdr *phdr = (Elf32_Phdr *)(buf + ehdr->e_phoff);
+    uint32_t max_extent = 0;
+    uint16_t i;
+
+    for (i = 0; i < ehdr->e_phnum; i++) {
+        if (phdr[i].p_type != PT_LOAD || phdr[i].p_filesz == 0) continue;
+        uint32_t seg_end = phdr[i].p_offset + phdr[i].p_filesz;
+        if (seg_end > max_extent) max_extent = seg_end;
+    }
+
+    if (max_extent == 0) {
+        lkprint("\n[ELF ERROR] No PT_LOAD segments with file data\n");
+        return LERR_NO_LOAD_SEG;
+    }
+
+    /* ── Phase 4: 세그먼트 데이터 끝까지 나머지 섹터 읽기 ── */
+    uint32_t total_sectors = (max_extent + 511U) / 512U; /* ceil */
+
+    lkprint(" (");
+    lkprint_hex(total_sectors);
+    lkprint(" sectors)\n");
+
+    while (sectors_read < total_sectors) {
+        if (sectors_read * 512U >= buf_max) {
+            lkprint("[ELF ERROR] ELF content exceeds buffer (");
+            lkprint_hex(buf_max);
+            lkprint(" bytes)\n");
+            return LERR_BUF_OVERFLOW;
+        }
+        if (ata_read_sector(KERNEL_LBA_START + sectors_read,
+                            buf + sectors_read * 512U) != 0) {
+            lkprint("\n[DISK ERROR] LBA=");
+            lkprint_hex(KERNEL_LBA_START + sectors_read);
+            lkprint("\n");
+            return LERR_DISK;
+        }
+        sectors_read++;
+        if ((sectors_read & 0x3F) == 0) lkputchar('.');
+    }
+
     return 0;
 }
 
@@ -250,31 +340,31 @@ static int load_elf_kernel(void *elf_buf, uint32_t *out_entry) {
         ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
         ehdr->e_ident[EI_MAG3] != ELFMAG3) {
         lkprint("[ELF ERROR] Invalid magic (not an ELF file)\n");
-        return -1;
+        return LERR_NOT_ELF;
     }
 
     /* 32비트 클래스 확인 */
     if (ehdr->e_ident[EI_CLASS] != ELFCLASS32) {
         lkprint("[ELF ERROR] Not a 32-bit ELF (ELFCLASS32 required)\n");
-        return -2;
+        return LERR_NOT_ELF32;
     }
 
     /* 리틀엔디안 확인 */
     if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) {
         lkprint("[ELF ERROR] Not little-endian (ELFDATA2LSB required)\n");
-        return -3;
+        return LERR_NOT_LSB;
     }
 
     /* x86 아키텍처 확인 */
     if (ehdr->e_machine != EM_386) {
         lkprint("[ELF ERROR] Not EM_386 architecture\n");
-        return -4;
+        return LERR_NOT_386;
     }
 
     /* 프로그램 헤더 존재 확인 */
     if (ehdr->e_phnum == 0 || ehdr->e_phoff == 0) {
         lkprint("[ELF ERROR] No program headers found\n");
-        return -5;
+        return LERR_NO_PHDRS;
     }
 
     lkprint("[ELF] e_entry=");
@@ -294,7 +384,7 @@ static int load_elf_kernel(void *elf_buf, uint32_t *out_entry) {
             lkprint("[ELF ERROR] p_memsz < p_filesz in segment ");
             lkprint_hex((uint32_t)i);
             lkprint("\n");
-            return -6;
+            return LERR_BAD_MEMSZ;
         }
 
         lkprint("[ELF] LOAD paddr=");
@@ -330,11 +420,11 @@ void loader_main(void) {
     serial_init();
 
     lkprint("ParinOS Stage 2 Loader (ELF32)\n");
-    lkprint("Loading kernel.elf to 0x200000...");
+    lkprint("Loading kernel.elf...");
 
-    /* ELF 파일을 임시 버퍼(0x200000)에 로드 */
+    /* ELF 파일을 임시 버퍼(0x200000)에 로드: 실제 크기만큼만 읽는다 */
     uint8_t *elf_buf = (uint8_t *)ELF_TEMP_ADDR;
-    if (load_kernel_image(elf_buf, (uint32_t)KERNEL_SECTORS * 512U) != 0) {
+    if (load_kernel_image(elf_buf, ELF_BUF_MAX) != 0) {
         lkprint("[FATAL] Disk read failed. System halted.\n");
         for (;;);
     }
