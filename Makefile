@@ -79,7 +79,7 @@ $(KERNEL_SYM): $(BUILD_DIR)/kernel.elf
 	@echo "Generating kernel symbol table..."
 	$(NM) $< | awk '{ if($$2 == "T" || $$2 == "D" || $$2 == "B") print $$3 " = 0x" $$1 ";" }' > $@
 
-$(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.bin
+$(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.elf
 	cat $^ > $@
 	truncate -s 1048576  $@
 
