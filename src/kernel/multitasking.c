@@ -138,23 +138,24 @@ void init_multitasking(void) {
     memset(processes, 0, sizeof(processes));
     // state 는 0 = KTHREAD_UNUSED / KPROCESS_UNUSED 이므로 위의 memset으로 충분
 
-    // 커널 메인 프로세스 (PID 0) 등록
-    processes[0].id           = 0;
+    // 커널 메인 프로세스 (PID 1, "init") 등록
+    // Linux 관례: PID 1은 항상 init 프로세스
+    processes[0].id           = 1;
     processes[0].state        = KPROCESS_RUNNING;
     processes[0].thread_count = 1;
     processes[0].thread_ids[0] = 0;
-    copy_name(processes[0].name, "System", sizeof(processes[0].name));
+    copy_name(processes[0].name, "init", sizeof(processes[0].name));
 
     // 커널 메인 스레드 (TID 0) 등록
     // 실제 ESP 는 첫 번째 타이머 인터럽트에서 저장됨
     threads[0].id               = 0;
-    threads[0].pid              = 0;
+    threads[0].pid              = 1;
     threads[0].state            = KTHREAD_RUNNING;
     threads[0].esp              = 0; // 첫 번째 스위치 시 자동으로 채워짐
     threads[0].stack            = NULL; // 부트 스택 (kmalloc 으로 할당하지 않음)
     threads[0].stack_size       = 0;
     threads[0].sleep_until_tick = 0;
-    copy_name(threads[0].name, "kmain", sizeof(threads[0].name));
+    copy_name(threads[0].name, "init", sizeof(threads[0].name));
 
     current_tid = 0;
     current_pid = 0;

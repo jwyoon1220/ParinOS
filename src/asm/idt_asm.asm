@@ -3,9 +3,11 @@
 global idt_load
 global irq0_handler
 global irq1_handler
+global syscall_handler
 
 extern keyboard_handler_main
 extern scheduler_tick
+extern syscall_dispatch
 
 ; 1. IDT 로드 함수 (안전한 버전)
 idt_load:
@@ -118,4 +120,44 @@ isr14_handler:
 
     ; CPU가 push한 에러 코드를 스택에서 제거 (4바이트)
     add esp, 4
+    iretd
+
+; ─────────────────────────────────────────────────────────────────────────────
+; 4. 시스템 콜 핸들러 (int 0x80, DPL=3 → Ring 3에서 호출 가능)
+;
+;    Linux 호환 호출 규약:
+;      EAX = syscall 번호
+;      EBX = 인자 1
+;      ECX = 인자 2
+;      EDX = 인자 3
+;    반환값: EAX
+; ─────────────────────────────────────────────────────────────────────────────
+syscall_handler:
+    ; 커널 세그먼트 로드
+    push ds
+    push es
+    push fs
+    push gs
+
+    mov cx, 0x10
+    mov ds, cx
+    mov es, cx
+    mov fs, cx
+    mov gs, cx
+
+    ; 인자 전달: syscall_dispatch(eax, ebx, ecx, edx)
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call syscall_dispatch
+    add esp, 16         ; 인자 4개 정리
+
+    ; EAX = 반환값 (syscall_dispatch의 return value)
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+
     iretd
