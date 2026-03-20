@@ -93,26 +93,26 @@ static void print_prompt(void) {
 
 static void cmd_help() {
     kprintf("\nAvailable commands:\n");
-    kprintf("  help          - 도움말 출력\n");
-    kprintf("  clear         - 화면 지우기\n");
-    kprintf("  cd <path>     - 작업 디렉터리 변경\n");
-    kprintf("  ls [path]     - 디렉터리 목록\n");
-    kprintf("  cat <path>    - 파일 출력 (> 리디렉션 지원)\n");
-    kprintf("  echo <text>   - 텍스트 출력 (> 리디렉션 지원)\n");
-    kprintf("  run <path>    - ELF 실행\n");
-    kprintf("  playsound <p> - WAV 파일 재생\n");
-    kprintf("  md <addr>     - 메모리 덤프 (16진수 주소)\n");
-    kprintf("  date          - 현재 날짜\n");
-    kprintf("  time          - 현재 시각\n");
-    kprintf("  free          - 힙 통계\n");
-    kprintf("  uptime        - 가동 시간\n");
-    kprintf("  cpuinfo       - CPU 정보\n");
-    kprintf("  pci_info      - PCI 장치 목록\n");
-    kprintf("  vmm_stat      - 가상 메모리 통계\n");
-    kprintf("  task_view     - 프로세스/스레드 목록\n");
-    kprintf("  fs            - 파일 시스템 정보\n");
-    kprintf("  reboot        - 시스템 재시작\n");
-    kprintf("  panic         - 강제 패닉 (테스트용)\n");
+    kprintf("  help          - Show This message\n");
+    kprintf("  clear         - Clear the screen\n");
+    kprintf("  cd <path>     - Change Currend Work Directory\n");
+    kprintf("  ls [path]     - list of files and dirsa\n");
+    kprintf("  cat <path>    - Print the name of file\n");
+    kprintf("  echo <text>   - echo\n");
+    kprintf("  run <path>    - run elf32\n");
+    kprintf("  playsound <p> - Play wav\n");
+    kprintf("  md <addr>     - momry dump\n");
+    kprintf("  date          - Date\n");
+    kprintf("  time          - Time\n");
+    kprintf("  free          - Heap Statistics\n");
+    kprintf("  uptime        - Uptime\n");
+    kprintf("  cpuinfo       - CPU Information\n");
+    kprintf("  pci_info      - List of PCI Devices\n");
+    kprintf("  vmm_stat      - VMM Statistics\n");
+    kprintf("  task_view     - Processes and threads\n");
+    kprintf("  fs            - File System Info\n");
+    kprintf("  reboot        - Reboot\n");
+    kprintf("  panic         - Panic\n");
 }
 
 static void cmd_clear() {
