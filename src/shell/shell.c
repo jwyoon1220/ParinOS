@@ -14,6 +14,7 @@
 #include "../elf/elf.h"
 #include "../std/kstd.h"
 #include "../drivers/speaker.h"
+#include "../font/font.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 셸 상태
@@ -113,6 +114,7 @@ static void cmd_help() {
     kprintf("  fs            - File System Info\n");
     kprintf("  reboot        - Reboot\n");
     kprintf("  panic         - Panic\n");
+    kprintf("  cng_font <p> [sz] - Load TrueType font from path (size optional, default 16)\n");
 }
 
 static void cmd_clear() {
@@ -226,6 +228,48 @@ static void cmd_playsound(const char* arg) {
     klog_info("Playing: %s\n", path);
     if (!speaker_play_wav(path)) {
         klog_error("playsound: Failed to play '%s'\n", path);
+    }
+}
+
+/* cng_font <path> [size]  – TrueType 폰트 변경 */
+static void cmd_cng_font(const char* arg) {
+    if (arg == NULL || *arg == '\0') {
+        kprintf("Usage: cng_font <path> [size]\n");
+        kprintf("  Example: cng_font /0/fonts/mono.ttf 16\n");
+        return;
+    }
+
+    char path[256];
+    int  size = 16;
+
+    /* 공백으로 경로와 크기 분리 */
+    const char *sp = strchr(arg, ' ');
+    if (sp) {
+        int plen = (int)(sp - arg);
+        if (plen >= 256) plen = 255;
+        int k;
+        for (k = 0; k < plen; k++) path[k] = arg[k];
+        path[plen] = '\0';
+
+        /* 크기 파싱 */
+        const char *sz = sp + 1;
+        while (*sz == ' ') sz++;
+        size = 0;
+        while (*sz >= '0' && *sz <= '9') {
+            size = size * 10 + (*sz - '0');
+            sz++;
+        }
+        if (size <= 0) size = 16;
+    } else {
+        strcpy(path, arg);
+    }
+
+    char abs_path[256];
+    resolve_path(path, abs_path, sizeof(abs_path));
+
+    kprintf("Loading font: %s (size %d)\n", abs_path, size);
+    if (font_load_ttf(abs_path, size) != 0) {
+        klog_error("cng_font: Failed to load '%s'\n", abs_path);
     }
 }
 
@@ -389,6 +433,17 @@ void process_command() {
         kprintf("Rebooting system...\n");
         sleep(1000);
         asm volatile("int $0x19");
+    }
+
+    // ── cng_font [path] [size] ────────────────────────────────────────────────
+    else if (strcmp(cmd_buf, "cng_font") == 0) {
+        cmd_cng_font(NULL);
+    }
+    else if (strncmp(cmd_buf, "cng_font ", 9) == 0) {
+        char* arg = cmd_buf + 9;
+        while (*arg == ' ') arg++;
+        trim_spaces(arg);
+        cmd_cng_font(arg);
     }
 
     // ── 알 수 없는 명령어 ─────────────────────────────────────────────────────
