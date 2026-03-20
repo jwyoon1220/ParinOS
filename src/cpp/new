@@ -1,0 +1,9 @@
+// src/cpp/new — C++ <new> 헤더 (freestanding 커널용)
+#pragma once
+#include <stddef.h>
+
+// placement new
+inline void *operator new(size_t, void *p) noexcept { return p; }
+inline void *operator new[](size_t, void *p) noexcept { return p; }
+inline void  operator delete  (void *, void *) noexcept {}
+inline void  operator delete[](void *, void *) noexcept {}

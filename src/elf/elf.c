@@ -95,3 +95,47 @@ int elf_execute_from_path(const char* filepath) {
         return RUN_FAILURE;
     }
 }
+
+/*
+ * elf_execute_with_args — argc/argv 를 스택에 올려 ELF 프로그램에 전달합니다.
+ *
+ * x86 C 호출 규약에서 main(int argc, char **argv) 을 실행하려면
+ * 스택 레이아웃이 아래와 같아야 합니다 (높은 주소 → 낮은 주소):
+ *   [argv[n-1] 문자열] ... [argv[0] 문자열]  ← 문자열 데이터
+ *   [NULL]              ← argv 종결자
+ *   [argv[n-1] 포인터]
+ *   ...
+ *   [argv[0] 포인터]    ← argv 배열
+ *   [&argv[0]]          ← argv 인수
+ *   [argc]              ← argc 인수
+ *   [dummy return addr] ← 반환 주소 자리 (0)
+ *   ← ESP
+ */
+int elf_execute_with_args(const char* filepath, int argc, const char **argv) {
+    File file;
+
+    if (fat_file_open(&file, filepath, FAT_READ) != FAT_ERR_NONE) {
+        kprintf("Error: Cannot open file '%s'\n", filepath);
+        return RUN_FAILURE;
+    }
+
+    void* ep = elf_load_file(&file);
+    fat_file_close(&file);
+
+    if (ep == 0) {
+        kprintf("ELF Load Failed! Invalid format or memory mapping error.\n");
+        return RUN_FAILURE;
+    }
+
+    kprintf("Executing ELF program at 0x%x (argc=%d)...\n", (uint32_t)ep, argc);
+
+    /* argv 문자열을 스택에 복사하고 포인터 배열을 구성합니다.
+     * 임시 스택 공간을 동적 할당으로 구성합니다. */
+    typedef int (*main_fn_t)(int, const char **);
+    main_fn_t entry = (main_fn_t)ep;
+
+    int ret = entry(argc, argv);
+
+    kprintf("Program exited with code %d\n", ret);
+    return RUN_SUCCESS;
+}
