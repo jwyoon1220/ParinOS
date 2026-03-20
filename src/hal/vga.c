@@ -72,19 +72,69 @@ void update_cursor(int x, int y) {
     outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
 }
 
+/* ── MMX-accelerated VGA text scroll ─────────────────────────────────────────
+ * Copy rows 1..24 → rows 0..23 (80 cols × 24 rows = 3840 bytes).
+ * Each VGA cell is 2 bytes; we copy 8 bytes (4 cells) per movq iteration.
+ * Then clear the last row with the blank+colour pattern.
+ */
 static void vga_scroll() {
-    char* video_memory = (char*)0xB8000;
-    for (int i = 0; i < 80 * (25 - 1); i++) {
-        video_memory[i * 2] = video_memory[(i + 80) * 2];
-        video_memory[i * 2 + 1] = video_memory[(i + 80) * 2 + 1];
-    }
-    for (int i = 80 * (25 - 1); i < 80 * 25; i++) {
-        video_memory[i * 2] = ' ';
-        video_memory[i * 2 + 1] = default_color;
-    }
+
+    /* --- move 24 rows up using MMX (8 bytes = 4 cells per iteration) --- */
+    uint8_t *dst = (uint8_t*)0xB8000;
+    uint8_t *src = dst + 80 * 2;          /* one row below */
+    int copy_bytes = 80 * 24 * 2;         /* 3840 bytes */
+
+    __asm__ __volatile__ (
+        "movl %0, %%ecx          \n" /* byte count */
+        "movl %1, %%esi          \n" /* src */
+        "movl %2, %%edi          \n" /* dst */
+        "shrl $3, %%ecx          \n" /* divide by 8 → qword count */
+        "1:                      \n"
+        "movq (%%esi), %%mm0     \n" /* load 8 bytes */
+        "movq %%mm0, (%%edi)     \n" /* store 8 bytes */
+        "addl $8, %%esi          \n"
+        "addl $8, %%edi          \n"
+        "decl %%ecx              \n"
+        "jnz 1b                  \n"
+        "emms                    \n" /* restore FPU state */
+        :
+        : "g"(copy_bytes), "g"((uintptr_t)src), "g"((uintptr_t)dst)
+        : "ecx", "esi", "edi", "mm0", "memory"
+    );
+
+    /* --- clear last row using MMX --- */
+    uint16_t blank = (uint16_t)((default_color << 8) | ' ');
+    /* pack four copies of `blank` into a 64-bit pattern */
+    uint64_t pattern = (uint64_t)blank
+                     | ((uint64_t)blank << 16)
+                     | ((uint64_t)blank << 32)
+                     | ((uint64_t)blank << 48);
+
+    uint8_t *last_row = (uint8_t*)(0xB8000 + 80 * 24 * 2); /* 160 bytes */
+    int fill_bytes = 80 * 2;
+
+    __asm__ __volatile__ (
+        "movl   %0, %%ecx          \n"
+        "movl   %1, %%edi          \n"
+        "movq   %2, %%mm0          \n" /* load 8-byte fill pattern */
+        "shrl   $3, %%ecx          \n" /* qword count */
+        "2:                        \n"
+        "movq   %%mm0, (%%edi)     \n"
+        "addl   $8, %%edi          \n"
+        "decl   %%ecx              \n"
+        "jnz    2b                 \n"
+        "emms                      \n"
+        :
+        : "g"(fill_bytes), "g"((uintptr_t)last_row), "m"(pattern)
+        : "ecx", "edi", "mm0", "memory"
+    );
+
     cursor_y = 25 - 1;
 }
 
+/* ── MMX-accelerated VGA text clear ──────────────────────────────────────────
+ * Fill all 80×25 = 2000 cells (4000 bytes) with blank+colour in 8-byte steps.
+ */
 void vga_clear() {
     if (vesa_is_active() && font_is_ready()) {
         vesa_clear(0, 0, 0);
@@ -93,11 +143,30 @@ void vga_clear() {
         kprintf_serial("[VESA] Screen Cleared\n");
         return;
     }
-    char* video_memory = (char*)0xB8000;
-    for (int i = 0; i < 80 * 25; i++) {
-        video_memory[i * 2] = ' ';
-        video_memory[i * 2 + 1] = default_color;
-    }
+
+    uint16_t blank = (uint16_t)((default_color << 8) | ' ');
+    uint64_t pattern = (uint64_t)blank
+                     | ((uint64_t)blank << 16)
+                     | ((uint64_t)blank << 32)
+                     | ((uint64_t)blank << 48);
+    int fill_bytes = 80 * 25 * 2; /* 4000 bytes */
+
+    __asm__ __volatile__ (
+        "movl   %0, %%ecx          \n"
+        "movl   %1, %%edi          \n"
+        "movq   %2, %%mm0          \n"
+        "shrl   $3, %%ecx          \n" /* 4000/8 = 500 iterations */
+        "3:                        \n"
+        "movq   %%mm0, (%%edi)     \n"
+        "addl   $8, %%edi          \n"
+        "decl   %%ecx              \n"
+        "jnz    3b                 \n"
+        "emms                      \n"
+        :
+        : "g"(fill_bytes), "g"((uintptr_t)0xB8000), "m"(pattern)
+        : "ecx", "edi", "mm0", "memory"
+    );
+
     cursor_x = 0;
     cursor_y = 0;
     update_cursor(0, 0);
@@ -224,10 +293,48 @@ void lkputchar(char c) {
     write_serial(text_c);
 }
 
-void kprint(const char* string) {
-    for (int i = 0; string[i] != '\0'; i++) {
-        lkputchar(string[i]);
+/* ── SSE2-accelerated null-terminator scan for kprint ────────────────────────
+ * Use pcmpeqb against a zero-filled XMM register to test 16 bytes at once
+ * for the null terminator. Once we know the string's length we pass each
+ * character through the normal lkputchar path (UTF-8 / VGA / VESA aware).
+ *
+ * Falls back to a byte-by-byte scan when the pointer is not 16-byte aligned
+ * for the first partial chunk.
+ */
+void kprint(const char *string) {
+    if (!string) return;
+
+    /* Find length with SSE2 ------------------------------------------------ */
+    const char *p = string;
+
+    /* Align to 16-byte boundary by scanning one byte at a time */
+    while ((uintptr_t)p & 15) {
+        if (*p == '\0') goto done_scan;
+        p++;
     }
+
+    /* 16-byte aligned loop using SSE2 pcmpeqb / pmovmskb */
+    while (1) {
+        int mask;
+        __asm__ __volatile__ (
+            "pxor    %%xmm0, %%xmm0         \n" /* xmm0 = 0 */
+            "movdqa  (%1),   %%xmm1         \n" /* load 16 bytes */
+            "pcmpeqb %%xmm0, %%xmm1         \n" /* byte == 0 → 0xFF */
+            "pmovmskb %%xmm1, %0            \n" /* bitmask of zero bytes */
+            : "=r"(mask)
+            : "r"(p)
+            : "xmm0", "xmm1"
+        );
+        if (mask) break;   /* at least one null byte in this chunk */
+        p += 16;
+    }
+done_scan:;
+
+    /* Now emit every character up to (but not including) null -------------- */
+    const char *s = string;
+    while (s < p) lkputchar(*s++);
+    /* emit remaining chars from the last partial chunk */
+    while (*s) lkputchar(*s++);
 }
 
 void kprintln(const char* string) {

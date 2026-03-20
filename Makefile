@@ -20,7 +20,7 @@ DISK_SRC   = ./disk_src
 DISK_SIZE_MB = 1024
 
 # --- 컴파일 플래그 ---
-CFLAGS   = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables
+CFLAGS   = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables -mmmx -msse2
 CXXFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector \
            -fno-asynchronous-unwind-tables -fno-exceptions -fno-rtti \
            -std=c++17 -I$(SRC_DIR)/cpp
@@ -128,7 +128,7 @@ headers:
 
 run: all headers
 	@echo "Launching QEMU..."
-	qemu-system-i386 -m 256M \
+	qemu-system-x86_64 -m 256M -cpu qemu32,+mmx,+sse2 \
 		-drive file=$(IMAGE),format=raw,index=0,media=disk \
 		-drive file=$(DISK_IMG),format=raw,id=disk0,if=none \
 		-device ahci,id=ahci \

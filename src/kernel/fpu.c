@@ -11,22 +11,19 @@
  */
 void fpu_init(void) {
     uint32_t cr0;
+    uint32_t cr4;
 
-    /* CR0 읽기 */
+    /* --- x87 FPU 활성화 (CR0) --- */
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
-
-    /* CR0.EM(bit 2) 클리어: FPU 에뮬레이션 비활성화 */
-    cr0 &= ~(1u << 2);
-
-    /* CR0.TS(bit 3) 클리어: Task-Switched 플래그 해제 */
-    cr0 &= ~(1u << 3);
-
-    /* CR0.MP(bit 1) 설정: 보조 처리기 모니터링 활성화 */
-    cr0 |= (1u << 1);
-
-    /* CR0 쓰기 */
+    cr0 &= ~(1u << 2); /* EM=0 */
+    cr0 &= ~(1u << 3); /* TS=0 */
+    cr0 |= (1u << 1);  /* MP=1 */
     __asm__ volatile("mov %0, %%cr0" :: "r"(cr0));
-
-    /* FPU 상태 초기화 (예외 마스킹 포함) */
     __asm__ volatile("fninit");
+
+    /* --- SSE 활성화 (CR4) --- */
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1u << 9);  /* OSFXSR=1: FXSAVE/FXRSTOR 지원 */
+    cr4 |= (1u << 10); /* OSXMMEXCPT=1: SIMD 예외 지원 */
+    __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
 }

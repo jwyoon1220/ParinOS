@@ -55,6 +55,7 @@ extern uint8_t default_color;
 
 // 화면을 깨끗하게 지우는 함수
 void vga_clear();
+void vga_set_color(uint8_t color);
 
 // 기본 출력 함수들
 void lkputchar(char c);
