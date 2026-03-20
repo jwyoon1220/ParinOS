@@ -1,0 +1,49 @@
+// src/cpp/utility — C++ <utility> 최소 구현 (freestanding 커널용)
+#pragma once
+
+namespace kstd {
+
+/* ── move ──────────────────────────────────────────────────────────────── */
+template<typename T>
+struct remove_reference      { using type = T; };
+template<typename T>
+struct remove_reference<T&>  { using type = T; };
+template<typename T>
+struct remove_reference<T&&> { using type = T; };
+
+template<typename T>
+constexpr typename remove_reference<T>::type &&move(T &&t) noexcept {
+    return static_cast<typename remove_reference<T>::type &&>(t);
+}
+
+/* ── forward ───────────────────────────────────────────────────────────── */
+template<typename T>
+constexpr T &&forward(typename remove_reference<T>::type &t) noexcept {
+    return static_cast<T &&>(t);
+}
+template<typename T>
+constexpr T &&forward(typename remove_reference<T>::type &&t) noexcept {
+    return static_cast<T &&>(t);
+}
+
+/* ── swap ──────────────────────────────────────────────────────────────── */
+template<typename T>
+void swap(T &a, T &b) noexcept {
+    T tmp = move(a);
+    a = move(b);
+    b = move(tmp);
+}
+
+/* ── pair ──────────────────────────────────────────────────────────────── */
+template<typename F, typename S>
+struct pair {
+    F first;
+    S second;
+    pair() = default;
+    pair(const F &f, const S &s) : first(f), second(s) {}
+};
+
+template<typename F, typename S>
+pair<F, S> make_pair(F f, S s) { return pair<F,S>(f, s); }
+
+} // namespace kstd

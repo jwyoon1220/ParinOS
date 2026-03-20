@@ -100,7 +100,8 @@ static void cmd_help() {
     kprintf("  ls [path]     - list of files and dirsa\n");
     kprintf("  cat <path>    - Print the name of file\n");
     kprintf("  echo <text>   - echo\n");
-    kprintf("  run <path>    - run elf32\n");
+    kprintf("  run <path> [args]  - run elf32 with optional arguments\n");
+    kprintf("  ./<path> [args]    - run elf32 directly with optional arguments\n");
     kprintf("  playsound <p> - Play wav\n");
     kprintf("  md <addr>     - momry dump\n");
     kprintf("  date          - Date\n");
@@ -359,23 +360,76 @@ void process_command() {
         cmd_playsound(arg);
     }
 
-    // ── run <path> ───────────────────────────────────────────────────────────
+    // ── run <path> [arg1 arg2 ...] ──────────────────────────────────────────
     else if (strncmp(cmd_buf, "run ", 4) == 0) {
         char* target_path = cmd_buf + 4;
         while (*target_path == ' ') target_path++;
         trim_spaces(target_path);
 
         if (strlen(target_path) > 0) {
-            char abs_path[256];
-            resolve_path(target_path, abs_path, sizeof(abs_path));
-            kprintf("Loading '%s'...\n", abs_path);
-            if (elf_execute_from_path(abs_path) == RUN_SUCCESS) {
+            /* 경로와 인수 분리 */
+            char  abs_path[256];
+            char  arg_buf[256];
+            const char *argv[32];
+            int   argc = 0;
+
+            /* 첫 번째 토큰 = 경로 */
+            char *sp = target_path;
+            int   pi = 0;
+            while (*sp && *sp != ' ' && pi < 254) arg_buf[pi++] = *sp++;
+            arg_buf[pi] = '\0';
+            resolve_path(arg_buf, abs_path, sizeof(abs_path));
+            argv[argc++] = abs_path;
+
+            /* 나머지 토큰 = 인수 */
+            while (*sp && argc < 31) {
+                while (*sp == ' ') sp++;
+                if (!*sp) break;
+                argv[argc++] = sp;
+                while (*sp && *sp != ' ') sp++;
+                if (*sp) { *sp = '\0'; sp++; }
+            }
+            argv[argc] = 0;
+
+            kprintf("Loading '%s' (argc=%d)...\n", abs_path, argc);
+            if (elf_execute_with_args(abs_path, argc, argv) == RUN_SUCCESS) {
                 kprintf("\nProgram '%s' finished successfully.\n", abs_path);
             } else {
                 kprintf("\nFailed to execute '%s'.\n", abs_path);
             }
         } else {
-            kprintf("Usage: run <filepath>\n");
+            kprintf("Usage: run <filepath> [args...]\n");
+        }
+    }
+
+    // ── ./path [arg1 arg2 ...] 직접 실행 ────────────────────────────────────
+    else if (cmd_buf[0] == '.' && cmd_buf[1] == '/') {
+        char  abs_path[256];
+        char  arg_buf[256];
+        const char *argv[32];
+        int   argc = 0;
+
+        char *sp = cmd_buf;
+        int   pi = 0;
+        while (*sp && *sp != ' ' && pi < 254) arg_buf[pi++] = *sp++;
+        arg_buf[pi] = '\0';
+        resolve_path(arg_buf, abs_path, sizeof(abs_path));
+        argv[argc++] = abs_path;
+
+        while (*sp && argc < 31) {
+            while (*sp == ' ') sp++;
+            if (!*sp) break;
+            argv[argc++] = sp;
+            while (*sp && *sp != ' ') sp++;
+            if (*sp) { *sp = '\0'; sp++; }
+        }
+        argv[argc] = 0;
+
+        kprintf("Loading '%s' (argc=%d)...\n", abs_path, argc);
+        if (elf_execute_with_args(abs_path, argc, argv) == RUN_SUCCESS) {
+            kprintf("\nProgram '%s' finished successfully.\n", abs_path);
+        } else {
+            kprintf("\nFailed to execute '%s'.\n", abs_path);
         }
     }
 

@@ -1,0 +1,60 @@
+// src/cpp/optional — C++ <optional> 최소 구현 (freestanding 커널용)
+#pragma once
+#include "utility"   // kstd::move
+
+namespace kstd {
+
+struct nullopt_t { explicit constexpr nullopt_t(int) {} };
+constexpr nullopt_t nullopt{0};
+
+template<typename T>
+class optional {
+    alignas(T) unsigned char _buf[sizeof(T)];
+    bool _has;
+
+    T       *ptr()       { return reinterpret_cast<T*>(_buf); }
+    const T *ptr() const { return reinterpret_cast<const T*>(_buf); }
+
+public:
+    optional() noexcept : _has(false) {}
+    optional(nullopt_t) noexcept : _has(false) {}
+
+    optional(const T &v) : _has(true) { new (ptr()) T(v); }
+    optional(T &&v)      : _has(true) { new (ptr()) T(kstd::move(v)); }
+
+    optional(const optional &o) : _has(o._has) {
+        if (_has) new (ptr()) T(*o.ptr());
+    }
+    optional(optional &&o) noexcept : _has(o._has) {
+        if (_has) { new (ptr()) T(kstd::move(*o.ptr())); o.reset(); }
+    }
+
+    ~optional() { reset(); }
+
+    optional &operator=(nullopt_t) noexcept { reset(); return *this; }
+    optional &operator=(const T &v) {
+        if (_has) *ptr() = v;
+        else { new (ptr()) T(v); _has = true; }
+        return *this;
+    }
+
+    void reset() noexcept {
+        if (_has) { ptr()->~T(); _has = false; }
+    }
+
+    bool has_value() const noexcept { return _has; }
+    explicit operator bool() const noexcept { return _has; }
+
+    T       &value()       { return *ptr(); }
+    const T &value() const { return *ptr(); }
+
+    T       &operator*()       { return *ptr(); }
+    const T &operator*() const { return *ptr(); }
+
+    T       *operator->()       { return ptr(); }
+    const T *operator->() const { return ptr(); }
+
+    T value_or(const T &def) const { return _has ? *ptr() : def; }
+};
+
+} // namespace kstd

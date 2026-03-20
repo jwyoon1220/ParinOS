@@ -1,7 +1,8 @@
-CC = i686-linux-gnu-gcc
-AS = nasm
-LD = i686-linux-gnu-ld
-NM = i686-linux-gnu-nm
+CC  = i686-linux-gnu-gcc
+CXX = i686-linux-gnu-g++
+AS  = nasm
+LD  = i686-linux-gnu-ld
+NM  = i686-linux-gnu-nm
 IMAGE = $(BUILD_DIR)/ParinOS.img
 KERNEL_SYM = kernel.sym
 INC_DEST = include  # 🌟 이 변수가 상단에 확실히 정의되어 있어야 합니다.
@@ -10,18 +11,23 @@ ASM_DIR = $(SRC_DIR)/asm
 LOADER_DIR = $(SRC_DIR)/loader
 BUILD_DIR = makefile-build
 
-CFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables
+CFLAGS   = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables
+CXXFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector \
+           -fno-asynchronous-unwind-tables -fno-exceptions -fno-rtti \
+           -std=c++17 -I$(SRC_DIR)/cpp
 LDFLAGS        = -m elf_i386 -nostdlib -no-pie -T kernel.ld
 LDFLAGS_LOADER = -m elf_i386 -nostdlib -no-pie -T loader.ld
 
 # 1. 모든 하위 폴더의 소스 탐색
-C_SOURCES = $(shell find $(SRC_DIR) -name "*.c" -not -path "$(LOADER_DIR)/*")
+C_SOURCES   = $(shell find $(SRC_DIR) -name "*.c" -not -path "$(LOADER_DIR)/*")
+CXX_SOURCES = $(shell find $(SRC_DIR) -name "*.cpp" -not -path "$(LOADER_DIR)/*")
 ALL_ASM = $(shell find $(ASM_DIR) -name "*.asm")
 ASM_SOURCES = $(filter-out $(ASM_DIR)/boot.asm $(ASM_DIR)/kernel_entry.asm $(ASM_DIR)/loader_entry.asm, $(ALL_ASM))
 LOADER_C_SOURCES = $(wildcard $(LOADER_DIR)/*.c)
 
 # 2. 오브젝트 경로 생성
 C_OBJECTS        = $(patsubst $(SRC_DIR)/%.c,  $(BUILD_DIR)/%.o,       $(C_SOURCES))
+CXX_OBJECTS      = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,       $(CXX_SOURCES))
 ASM_OBJECTS      = $(patsubst $(ASM_DIR)/%.asm, $(BUILD_DIR)/%_asm.o,  $(ASM_SOURCES))
 LOADER_C_OBJECTS = $(patsubst $(LOADER_DIR)/%.c, $(BUILD_DIR)/loader/%.o, $(LOADER_C_SOURCES))
 
@@ -52,6 +58,11 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | prep
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# C++ 파일 컴파일
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | prep
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(BUILD_DIR)/loader/%.o: $(LOADER_DIR)/%.c | prep
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -68,7 +79,7 @@ $(BUILD_DIR)/loader.bin: $(BUILD_DIR)/loader_entry.o $(LOADER_C_OBJECTS)
 
 # 🌟 최종 커널 링크 및 심볼 추출
 # 먼저 ELF 형태로 링크한 뒤, 거기서 바이너리를 추출하고 심볼도 뽑아냅니다.
-$(BUILD_DIR)/kernel.elf: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(ASM_OBJECTS)
+$(BUILD_DIR)/kernel.elf: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 $(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel.elf

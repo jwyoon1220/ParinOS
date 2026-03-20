@@ -64,6 +64,17 @@ typedef struct {
 // --- 로더 함수 프로토타입 ---
 bool elf_check_supported(Elf32_Ehdr *hdr);
 void* elf_load_file(File *file);
+
+/** ELF 파일을 경로에서 로드하고 실행합니다. (인수 없음) */
 int elf_execute_from_path(const char* filepath);
+
+/**
+ * ELF 파일을 경로에서 로드하고 argc/argv 를 전달하며 실행합니다.
+ * @param filepath  실행할 ELF 파일 경로
+ * @param argc      인수 개수 (프로그램 이름 포함)
+ * @param argv      인수 문자열 배열
+ * @return RUN_SUCCESS(0) 또는 RUN_FAILURE(음수)
+ */
+int elf_execute_with_args(const char* filepath, int argc, const char **argv);
 
 #endif

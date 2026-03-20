@@ -20,12 +20,32 @@ SECTIONS
     .rodata : AT(ADDR(.rodata))
     {
         *(.rodata)
+        *(.rodata.*)
     }
 
     /* 3. 읽기/쓰기 데이터 (초기화된 변수) */
     .data : AT(ADDR(.data))
     {
         *(.data)
+        *(.data.*)
+    }
+
+    /* C++ 전역 생성자 테이블 */
+    .init_array : AT(ADDR(.init_array))
+    {
+        __init_array_start = .;
+        KEEP(*(SORT(.init_array*)))
+        KEEP(*(.ctors))
+        __init_array_end = .;
+    }
+
+    /* C++ 전역 소멸자 테이블 */
+    .fini_array : AT(ADDR(.fini_array))
+    {
+        __fini_array_start = .;
+        KEEP(*(SORT(.fini_array*)))
+        KEEP(*(.dtors))
+        __fini_array_end = .;
     }
 
     /* 4. BSS (초기화되지 않은 변수, 0으로 채워짐) */
@@ -33,6 +53,7 @@ SECTIONS
     {
         *(.COMMON)
         *(.bss)
+        *(.bss.*)
     }
 
     /* 커널의 끝 주소를 나타내는 심볼 */
