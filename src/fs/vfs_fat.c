@@ -5,7 +5,7 @@
 #include "vfs_fat.h"
 #include "vfs.h"
 #include "fat.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../std/malloc.h"
 #include "../std/string.h"
 #include "../mem/mem.h"

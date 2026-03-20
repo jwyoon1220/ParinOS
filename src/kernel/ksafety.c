@@ -3,7 +3,7 @@
 //
 
 #include "ksafety.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../mem/mem.h"
 
 void ksafety_validate_ptr(const void *ptr, size_t size, int in_kernel) {

@@ -6,7 +6,7 @@
 #define PARINOS_AHCI_H
 
 #include "pci.h"
-#include "../io.h"
+#include "../hal/io.h"
 #include "../mem/mem.h"
 #include "../std/malloc.h"
 #include <stdint.h>

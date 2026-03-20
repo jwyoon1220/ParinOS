@@ -3,7 +3,7 @@
 //
 
 #include "elf.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../std/kstd.h"
 #include "../mem/mem.h"
 #include "../mem/vmm.h" // 🌟 VMM 연동

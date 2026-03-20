@@ -5,9 +5,10 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "mem.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../std/string.h"
 #include "../kernel/kernel_status_manager.h"
+#include "../hal/hal.h"
 
 // 전역 변수
 uint32_t* current_page_directory = NULL;
@@ -46,8 +47,10 @@ static int vmm_find_free_temp_slot(void) {
 
 // 물리 주소를 임시로 가상 주소에 매핑
 static void* vmm_temp_map(uint32_t paddr) {
+    uint32_t flags = hal_irq_save();
     int slot = vmm_find_free_temp_slot();
     if (slot == -1) {
+        hal_irq_restore(flags);
         kprintf("[VMM] All temporary mapping slots are in use!\n");
         return NULL;
     }
@@ -58,6 +61,7 @@ static void* vmm_temp_map(uint32_t paddr) {
 
     // 임시 매핑은 항상 Identity mapping 범위 내의 페이지 테이블을 사용
     if (!(current_page_directory[pd_idx] & PAGE_PRESENT)) {
+        hal_irq_restore(flags);
         kprintf("[VMM] Temporary mapping page table not present! This should not happen.\n");
         return NULL;
     }
@@ -66,6 +70,7 @@ static void* vmm_temp_map(uint32_t paddr) {
 
     // 기존 매핑이 있다면 오류
     if (page_table[pt_idx] & PAGE_PRESENT) {
+        hal_irq_restore(flags);
         kprintf("[VMM] Temporary slot %d already mapped! vaddr=%x\n", slot, vaddr);
         return NULL;
     }
@@ -78,21 +83,24 @@ static void* vmm_temp_map(uint32_t paddr) {
     // TLB 무효화
     vmm_invalidate_page(vaddr);
 
+    hal_irq_restore(flags);
     return (void*)vaddr;
 }
 
-// 임시 매핑 해제
 static void vmm_temp_unmap(void* temp_vaddr) {
+    uint32_t flags = hal_irq_save();
     uint32_t vaddr = (uint32_t)temp_vaddr;
 
     // 임시 매핑 범위 확인
     if (vaddr < TEMP_MAP_BASE || vaddr >= TEMP_MAP_BASE + TEMP_MAP_SIZE) {
+        hal_irq_restore(flags);
         kprintf("[VMM] Invalid temporary mapping address: 0x%x\n", vaddr);
         return;
     }
 
     int slot = (vaddr - TEMP_MAP_BASE) / TEMP_MAP_SLOT_SIZE;
     if (slot >= TEMP_MAP_SLOTS || !temp_map_used[slot]) {
+        hal_irq_restore(flags);
         kprintf("[VMM] Invalid temporary mapping slot: %d\n", slot);
         return;
     }
@@ -108,6 +116,7 @@ static void vmm_temp_unmap(void* temp_vaddr) {
 
     // TLB 무효화
     vmm_invalidate_page(vaddr);
+    hal_irq_restore(flags);
 }
 
 // 물리 주소에 안전하게 접근하는 함수

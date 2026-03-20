@@ -1,6 +1,6 @@
 #include "shell.h"
 #include "../std/string.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../mem/pmm.h"
 #include "../std/malloc.h"
 #include "../drivers/timer.h"
@@ -20,7 +20,8 @@
 // 셸 상태
 // ─────────────────────────────────────────────────────────────────────────────
 char* cmd_buf = NULL;
-int   cmd_idx = 0;
+int   cmd_idx = 0; // 커서 인덱스 (0 ~ cmd_len)
+int   cmd_len = 0; // 버퍼에 담긴 글자의 총 길이
 
 // 현재 작업 디렉터리 (FAT32 경로 형식: "/0/subdir/")
 static char cwd[256];
@@ -277,9 +278,37 @@ static void cmd_cng_font(const char* arg) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 셸 초기화
 // ─────────────────────────────────────────────────────────────────────────────
+static void shell_redraw_line(void) {
+    vga_draw_cursor(0);
+    vga_clear_current_line();
+    lkputchar('\r');
+    print_prompt();
+
+    int target_cx = vga_get_cx();
+    for (int i = 0; i < cmd_len; i++) {
+        if (i == cmd_idx) {
+            target_cx = vga_get_cx();
+        }
+        char c = cmd_buf[i];
+        if (c >= 32 || c == '\n' || c < 0) {
+            lkputchar(c);
+        }
+    }
+    if (cmd_idx == cmd_len) {
+        target_cx = vga_get_cx();
+    }
+    
+    vga_set_cx(target_cx);
+    vga_draw_cursor(1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 셸 초기화
+// ─────────────────────────────────────────────────────────────────────────────
 void shell_init() {
     if (cmd_buf == NULL) cmd_buf = (char*)kmalloc(128);
     cmd_idx = 0;
+    cmd_len = 0;
     memset(cmd_buf, 0, 128);
 
     // 작업 디렉터리 초기화
@@ -298,7 +327,7 @@ void shell_init() {
     vga_set_color(VGA_COLOR_DEFAULT);
     kprintf("\nParinOS Kernel Shell  (type 'help' for commands)\n\n");
 
-    print_prompt();
+    shell_redraw_line();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -306,10 +335,10 @@ void shell_init() {
 // ─────────────────────────────────────────────────────────────────────────────
 void process_command() {
     lkputchar('\n');
-    cmd_buf[cmd_idx] = '\0';
+    cmd_buf[cmd_len] = '\0';
 
-    if (cmd_idx == 0) {
-        print_prompt();
+    if (cmd_len == 0) {
+        shell_redraw_line();
         return;
     }
 
@@ -506,8 +535,9 @@ void process_command() {
     }
 
     cmd_idx = 0;
+    cmd_len = 0;
     memset(cmd_buf, 0, 128);
-    print_prompt();
+    shell_redraw_line();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -517,14 +547,53 @@ void shell_input(char c) {
     if (cmd_buf == NULL) return;
 
     if (c == '\n') {
+        cmd_buf[cmd_len] = '\0';
+        vga_draw_cursor(0);
+        vga_clear_current_line();
+        lkputchar('\r');
+        print_prompt();
+        for (int i = 0; i < cmd_len; i++) {
+            char oc = cmd_buf[i];
+            if (oc >= 32 || oc == '\n' || oc < 0) lkputchar(oc);
+        }
         process_command();
-    } else if (c == '\b') {
+    } else if (c == 17) { // Left arrow
         if (cmd_idx > 0) {
             cmd_idx--;
-            lkputchar('\b');
+            while (cmd_idx > 0 && (cmd_buf[cmd_idx] & 0xC0) == 0x80) {
+                cmd_idx--;
+            }
+            shell_redraw_line();
         }
-    } else if (cmd_idx < 127) {
-        cmd_buf[cmd_idx++] = c;
-        lkputchar(c);
+    } else if (c == 18) { // Right arrow
+        if (cmd_idx < cmd_len) {
+            cmd_idx++;
+            while (cmd_idx < cmd_len && (cmd_buf[cmd_idx] & 0xC0) == 0x80) {
+                cmd_idx++;
+            }
+            shell_redraw_line();
+        }
+    } else if (c == '\b') {
+        if (cmd_idx > 0) {
+            int start_idx = cmd_idx - 1;
+            while (start_idx > 0 && (cmd_buf[start_idx] & 0xC0) == 0x80) {
+                start_idx--;
+            }
+            int deleted_bytes = cmd_idx - start_idx;
+            for (int i = cmd_idx; i < cmd_len; i++) {
+                cmd_buf[i - deleted_bytes] = cmd_buf[i];
+            }
+            cmd_len -= deleted_bytes;
+            cmd_idx = start_idx;
+            shell_redraw_line();
+        }
+    } else if (cmd_len < 127) {
+        for (int i = cmd_len; i > cmd_idx; i--) {
+            cmd_buf[i] = cmd_buf[i - 1];
+        }
+        cmd_buf[cmd_idx] = c;
+        cmd_idx++;
+        cmd_len++;
+        shell_redraw_line();
     }
 }

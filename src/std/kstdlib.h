@@ -12,6 +12,10 @@
 /* ── 동적 메모리 (malloc.h 위임) ─────────────────────────────────────────── */
 #include "malloc.h"     /* kmalloc / kcalloc / kfree / krealloc */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ── 숫자 ↔ 문자열 변환 ──────────────────────────────────────────────────── */
 
 /** 10진 문자열을 int로 변환 (선행 공백과 부호 지원) */
@@ -69,5 +73,9 @@ void kabort(void) __attribute__((noreturn));
 
 /** atexit 스텁 (커널에서는 no-op) */
 int  katexit(void (*func)(void));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PARINOS_KSTDLIB_H */

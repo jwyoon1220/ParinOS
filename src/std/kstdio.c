@@ -3,7 +3,7 @@
 //
 
 #include "kstdio.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../mem/mem.h"
 
 /* ── vprintf 포워딩 ─────────────────────────────────────────────────────────

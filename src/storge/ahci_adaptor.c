@@ -4,7 +4,7 @@
 
 #include "ahci_adaptor.h"
 #include "../drivers/ahci.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../std/malloc.h"
 #include "../std/string.h"
 

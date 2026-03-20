@@ -15,6 +15,13 @@
 void font_init(void);
 
 /*
+ * 커널에 내장된 FONT.TTF 심볼을 로드하여 활성화합니다.
+ * @param size  픽셀 단위 글자 높이
+ * @return  0=성공, 음수=실패
+ */
+int font_load_embedded_ttf(int size);
+
+/*
  * TrueType 폰트 파일을 파일시스템에서 로드하여 활성화합니다.
  * @param path  파일시스템 절대 경로 (예: "/0/fonts/mono.ttf")
  * @param size  픽셀 단위 글자 높이
@@ -36,7 +43,7 @@ int font_get_height(void);
  * @param fr,fg,fb      전경색 RGB
  * @param br,bg_c,bb    배경색 RGB
  */
-void font_draw_char(int px, int py, char c,
+void font_draw_char(int px, int py, uint32_t codepoint,
                     uint8_t fr, uint8_t fg, uint8_t fb,
                     uint8_t br, uint8_t bg_c, uint8_t bb);
 

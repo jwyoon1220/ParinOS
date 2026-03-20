@@ -6,7 +6,7 @@
 #define PARINOS_TIMER_H
 
 #include <stdint.h>
-#include "../idt.h"
+#include "../hal/idt.h"
 
 void init_timer(uint32_t frequency);
 void sleep(uint32_t ms);

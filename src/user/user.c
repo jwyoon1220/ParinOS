@@ -4,7 +4,7 @@
 //
 
 #include "user.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../kernel/multitasking.h"
 
 // ─────────────────────────────────────────────────────────────────────────────

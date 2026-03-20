@@ -2,7 +2,8 @@
 // Created by jwyoo on 26. 3. 7..
 //
 #include "pmm.h"
-#include "../vga.h" // kprintf 사용
+#include "../hal/vga.h" // kprintf 사용
+#include "../hal/hal.h"
 
 #define MMAP_COUNT_ADDR 0x8000
 #define MMAP_DATA_ADDR  0x8004
@@ -115,12 +116,15 @@ void init_pmm() {
 // =============================================================================
 
 void* pmm_alloc_page() {
+    uint32_t flags = hal_irq_save();
     for (uint32_t i = 0; i < total_pages; i++) {
         if (!bitmap_test(i)) {
             bitmap_set(i);
+            hal_irq_restore(flags);
             return (void*)(i * PAGE_SIZE);
         }
     }
+    hal_irq_restore(flags);
     kprintf("[PMM] Out of Memory! (alloc_page)\n");
     return NULL;
 }
@@ -128,13 +132,15 @@ void* pmm_alloc_page() {
 void pmm_free_page(void* ptr) {
     if (ptr == NULL) return;
     uint32_t page_idx = (uint32_t)ptr / PAGE_SIZE;
+    uint32_t flags = hal_irq_save();
     bitmap_unset(page_idx);
+    hal_irq_restore(flags);
 }
 
-// 연속된 n개의 빈 페이지를 찾아 할당
 void* pmm_alloc_pages(uint32_t count) {
     if (count == 0) return NULL;
 
+    uint32_t flags = hal_irq_save();
     uint32_t continuous = 0;
     uint32_t start_page = 0;
 
@@ -146,24 +152,27 @@ void* pmm_alloc_pages(uint32_t count) {
                 for (uint32_t j = start_page; j < start_page + count; j++) {
                     bitmap_set(j);
                 }
+                hal_irq_restore(flags);
                 return (void*)(start_page * PAGE_SIZE);
             }
         } else {
             continuous = 0;
         }
     }
+    hal_irq_restore(flags);
     kprintf("[PMM] Out of Memory! (alloc_pages, count=%d)\n", count);
     return NULL; // 할당 실패
 }
 
-// 여러 페이지 해제
 void pmm_free_pages(void* ptr, uint32_t count) {
     if (ptr == NULL || count == 0) return;
 
     uint32_t start_page = (uint32_t)ptr / PAGE_SIZE;
+    uint32_t flags = hal_irq_save();
     for (uint32_t i = start_page; i < start_page + count; i++) {
         bitmap_unset(i);
     }
+    hal_irq_restore(flags);
 }
 
 // =============================================================================

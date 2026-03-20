@@ -3,7 +3,7 @@
 //
 
 #include "vfs.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../mem/mem.h"
 #include "../std/malloc.h"
 #include "../std/string.h"

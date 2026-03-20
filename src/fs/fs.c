@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include "fat.h"
 #include "../drivers/ahci.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../util/util.h"
 
 // 전역 파일 시스템 객체

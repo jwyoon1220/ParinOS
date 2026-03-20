@@ -6,7 +6,7 @@
 #include "../mem/pmm.h"
 #include "../mem/vmm.h"
 #include "../mem/mem.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 
 
 // 만약 매핑 시 Present와 RW를 동시에 주려면 (0x01 | 0x02 = 0x03)
@@ -78,19 +78,39 @@ void* kmalloc(size_t size) {
     }
 
     // 빈 공간이 없으면 확장
-    void* new_phys = pmm_alloc_page();
-    if (!new_phys) return NULL;
+    size_t expand_size = size + sizeof(heap_block_t) + 4;
+    if (last && last->is_free) {
+        if (expand_size > last->size) {
+            expand_size = expand_size - last->size;
+        } else {
+            expand_size = 0; 
+        }
+    }
 
-    vmm_map_page(heap_end_vaddr, (uint32_t)new_phys, PAGE_RW);
+    uint32_t pages_needed = (expand_size + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    heap_block_t* expanded_block = (heap_block_t*)heap_end_vaddr;
-    expanded_block->size = PAGE_SIZE - sizeof(heap_block_t);
-    expanded_block->is_free = 1;
-    expanded_block->next = NULL;
-    expanded_block->prev = last; // 새로 추가된 블록의 이전은 기존 마지막 블록
-
-    if (last) last->next = expanded_block;
-    heap_end_vaddr += PAGE_SIZE;
+    if (pages_needed > 0) {
+        for (uint32_t i = 0; i < pages_needed; i++) {
+            void* new_phys = pmm_alloc_page();
+            if (!new_phys) {
+                kprintf("\n[Heap] Out of Physical Memory!\n");
+                return NULL;
+            }
+            vmm_map_page(heap_end_vaddr, (uint32_t)new_phys, PAGE_RW);
+            heap_end_vaddr += PAGE_SIZE;
+        }
+        
+        if (last && last->is_free) {
+            last->size += pages_needed * PAGE_SIZE;
+        } else {
+            heap_block_t* expanded_block = (heap_block_t*)(heap_end_vaddr - (pages_needed * PAGE_SIZE));
+            expanded_block->size = (pages_needed * PAGE_SIZE) - sizeof(heap_block_t);
+            expanded_block->is_free = 1;
+            expanded_block->next = NULL;
+            expanded_block->prev = last;
+            if (last) last->next = expanded_block;
+        }
+    }
 
     return kmalloc(size);
 }

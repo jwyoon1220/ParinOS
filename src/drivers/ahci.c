@@ -3,7 +3,7 @@
 //
 
 #include "ahci.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../drivers/timer.h"
 #include "../mem/pmm.h"
 #include "../mem/vmm.h"

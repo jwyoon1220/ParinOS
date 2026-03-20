@@ -3,7 +3,7 @@
 //
 
 #include "hal.h"
-#include "../vga.h"
+#include "vga.h"
 #include "../drivers/timer.h"
 
 /* ── 시스템 리셋 ─────────────────────────────────────────────────────────── */

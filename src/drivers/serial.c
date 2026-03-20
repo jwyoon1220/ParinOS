@@ -1,9 +1,9 @@
 #include "serial.h"
-#include "../io.h"
+#include "../hal/io.h"
 #include <stdarg.h>
 #include <stdint.h>
 
-#include "../vga.h"
+#include "../hal/vga.h"
 
 // --- 내부 도우미 함수 (시리얼 전용) ---
 

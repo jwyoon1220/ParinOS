@@ -8,6 +8,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ── 정수 유틸리티 ─────────────────────────────────────────────────────────── */
 static inline int   kabs(int x)            { return x < 0 ? -x : x; }
 static inline long  klabs(long x)          { return x < 0 ? -x : x; }
@@ -74,5 +78,9 @@ static inline float klerpf(float a, float b, float t) {
 #define KM_E        2.71828182845904523536f
 #define KM_SQRT2    1.41421356237309504880f
 #define KM_LN2      0.69314718055994530942f
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PARINOS_KMATH_H */

@@ -1,16 +1,25 @@
+# --- 컴파일러 및 도구 설정 ---
 CC  = i686-linux-gnu-gcc
 CXX = i686-linux-gnu-g++
 AS  = nasm
 LD  = i686-linux-gnu-ld
 NM  = i686-linux-gnu-nm
-IMAGE = $(BUILD_DIR)/ParinOS.img
-KERNEL_SYM = kernel.sym
-INC_DEST = include  # 🌟 이 변수가 상단에 확실히 정의되어 있어야 합니다.
-SRC_DIR = src
-ASM_DIR = $(SRC_DIR)/asm
+OBJCOPY = objcopy
+
+# --- 경로 및 파일 설정 ---
+SRC_DIR   = src
+ASM_DIR   = $(SRC_DIR)/asm
 LOADER_DIR = $(SRC_DIR)/loader
 BUILD_DIR = makefile-build
+INC_DEST  = include
 
+IMAGE      = $(BUILD_DIR)/ParinOS.img
+KERNEL_SYM = kernel.sym
+DISK_IMG   = disk.img
+DISK_SRC   = ./disk_src
+DISK_SIZE_MB = 1024
+
+# --- 컴파일 플래그 ---
 CFLAGS   = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables
 CXXFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector \
            -fno-asynchronous-unwind-tables -fno-exceptions -fno-rtti \
@@ -18,96 +27,115 @@ CXXFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector \
 LDFLAGS        = -m elf_i386 -nostdlib -no-pie -T kernel.ld
 LDFLAGS_LOADER = -m elf_i386 -nostdlib -no-pie -T loader.ld
 
-# 1. 모든 하위 폴더의 소스 탐색
+# --- 소스 및 오브젝트 리스트 ---
 C_SOURCES   = $(shell find $(SRC_DIR) -name "*.c" -not -path "$(LOADER_DIR)/*")
 CXX_SOURCES = $(shell find $(SRC_DIR) -name "*.cpp" -not -path "$(LOADER_DIR)/*")
-ALL_ASM = $(shell find $(ASM_DIR) -name "*.asm")
+ALL_ASM     = $(shell find $(ASM_DIR) -name "*.asm")
 ASM_SOURCES = $(filter-out $(ASM_DIR)/boot.asm $(ASM_DIR)/kernel_entry.asm $(ASM_DIR)/loader_entry.asm, $(ALL_ASM))
 LOADER_C_SOURCES = $(wildcard $(LOADER_DIR)/*.c)
 
-# 2. 오브젝트 경로 생성
 C_OBJECTS        = $(patsubst $(SRC_DIR)/%.c,  $(BUILD_DIR)/%.o,       $(C_SOURCES))
 CXX_OBJECTS      = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,       $(CXX_SOURCES))
 ASM_OBJECTS      = $(patsubst $(ASM_DIR)/%.asm, $(BUILD_DIR)/%_asm.o,  $(ASM_SOURCES))
 LOADER_C_OBJECTS = $(patsubst $(LOADER_DIR)/%.c, $(BUILD_DIR)/loader/%.o, $(LOADER_C_SOURCES))
 
-IMAGE = $(BUILD_DIR)/ParinOS.img
-KERNEL_SYM = kernel.sym  # 🌟 커널 심볼 테이블 파일 이름
+FONT_FILE  = $(DISK_SRC)/FONT.TTF
+FONT_OBJECT= $(BUILD_DIR)/font_ttf.o
 
 LOADER_PAD_SIZE = 65536
 
-all: $(IMAGE) $(KERNEL_SYM) # 🌟 빌드 시 심볼 파일도 생성하도록 설정
+# --- 기본 타겟 ---
+all: prep $(IMAGE) $(KERNEL_SYM) $(DISK_IMG)
 
 prep:
 	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(DISK_SRC)
 
-# 부트로더 (바이너리)
-$(BUILD_DIR)/boot.bin: $(ASM_DIR)/boot.asm | prep
+# --- 빌드 규칙 ---
+
+# 부트로더
+$(BUILD_DIR)/boot.bin: $(ASM_DIR)/boot.asm
 	$(AS) -f bin $< -o $@
 
-# 2단계 로더 진입점 (어셈블리)
-$(BUILD_DIR)/loader_entry.o: $(ASM_DIR)/loader_entry.asm | prep
+# 로더 및 커널 진입점
+$(BUILD_DIR)/loader_entry.o: $(ASM_DIR)/loader_entry.asm
 	$(AS) -f elf32 $< -o $@
 
-# 커널 진입점
-$(BUILD_DIR)/kernel_entry.o: $(ASM_DIR)/kernel_entry.asm | prep
+$(BUILD_DIR)/kernel_entry.o: $(ASM_DIR)/kernel_entry.asm
 	$(AS) -f elf32 $< -o $@
 
-# C 파일 컴파일
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | prep
+# 컴파일 규칙
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# C++ 파일 컴파일
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | prep
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/loader/%.o: $(LOADER_DIR)/%.c | prep
+$(BUILD_DIR)/loader/%.o: $(LOADER_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# 어셈블리 컴파일
-$(BUILD_DIR)/%_asm.o: $(ASM_DIR)/%.asm | prep
+$(BUILD_DIR)/%_asm.o: $(ASM_DIR)/%.asm
 	@mkdir -p $(dir $@)
 	$(AS) -f elf32 $< -o $@
 
-# 2단계 C 로더 링크
+# 링크 과정
 $(BUILD_DIR)/loader.bin: $(BUILD_DIR)/loader_entry.o $(LOADER_C_OBJECTS)
 	$(LD) $(LDFLAGS_LOADER) $^ --oformat binary -o $@
 	truncate -s $(LOADER_PAD_SIZE) $@
 
-# 🌟 최종 커널 링크 및 심볼 추출
-# 먼저 ELF 형태로 링크한 뒤, 거기서 바이너리를 추출하고 심볼도 뽑아냅니다.
-$(BUILD_DIR)/kernel.elf: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS)
+$(FONT_OBJECT): $(FONT_FILE)
+	@mkdir -p $(dir $@)
+	cd $(DISK_SRC) && $(OBJCOPY) -I binary -O elf32-i386 -B i386 FONT.TTF ../$@
+
+$(BUILD_DIR)/kernel.elf: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(FONT_OBJECT)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 $(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel.elf
-	objcopy -O binary $< $@
+	$(OBJCOPY) -O binary $< $@
 
-# 🌟 커널 심볼 테이블 생성 (테스트 프로그램 링킹용)
+# 심볼 테이블 추출
 $(KERNEL_SYM): $(BUILD_DIR)/kernel.elf
 	@echo "Generating kernel symbol table..."
 	$(NM) $< | awk '{ if($$2 == "T" || $$2 == "D" || $$2 == "B") print $$3 " = 0x" $$1 ";" }' > $@
 
+# OS 이미지 생성
 $(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.elf
 	cat $^ > $@
-	truncate -s 1048576  $@
+	truncate -s 8388608 $@
 
-run:
-	$(MAKE) clean
-	$(MAKE) all
-	$(MAKE) headers
-	clear
-	qemu-system-i386 -m 256M -drive file=makefile-build/ParinOS.img -drive id=disk0,file=disk.img,if=none,format=raw -device ahci,id=ahci -serial stdio -device ide-hd,drive=disk0,bus=ahci.0
+# --- 데이터 디스크 이미지 생성 (FAT32) ---
+# mtools를 사용하여 sudo 없이 수행
+$(DISK_IMG):
+	@echo "Creating $(DISK_SIZE_MB)MB FAT32 disk image..."
+	@rm -f $(DISK_IMG)
+	dd if=/dev/zero of=$(DISK_IMG) bs=1M count=$(DISK_SIZE_MB)
+	mformat -i $(DISK_IMG) -F -v "PARIN_DATA" ::
+	@if [ -d $(DISK_SRC) ]; then \
+		echo "Copying files from $(DISK_SRC) to disk image..."; \
+		mcopy -i $(DISK_IMG) -s $(DISK_SRC)/* ::/; \
+	fi
 
-clean:
-	rm -rf $(BUILD_DIR) $(KERNEL_SYM)
-
-.PHONY: headers all prep run clean
+# --- 유틸리티 타겟 ---
 
 headers:
 	@mkdir -p $(INC_DEST)
 	@echo "Copying header files to $(INC_DEST)..."
 	@cd $(SRC_DIR) && find . -name "*.h" -exec cp --parents \{\} ../$(INC_DEST)/ \;
 	@echo "Done."
+
+run: all headers
+	@echo "Launching QEMU..."
+	qemu-system-i386 -m 256M \
+		-drive file=$(IMAGE),format=raw,index=0,media=disk \
+		-drive file=$(DISK_IMG),format=raw,id=disk0,if=none \
+		-device ahci,id=ahci \
+		-device ide-hd,drive=disk0,bus=ahci.0 \
+		-serial stdio
+
+clean:
+	rm -rf $(BUILD_DIR) $(KERNEL_SYM) $(DISK_IMG) $(INC_DEST)
+
+.PHONY: all prep headers run clean

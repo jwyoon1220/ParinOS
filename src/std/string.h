@@ -8,6 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* 문자열 비교 함수 */
 int strcmp(const char *s1, const char *s2);
 int strncmp(const char *s1, const char *s2, int n);
@@ -26,5 +30,9 @@ uint32_t atoi_hex(const char *s);
 
 // 새로 추가
 int snprintf(char* buffer, size_t size, const char* format, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //PARINOS_STRING_H

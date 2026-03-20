@@ -8,6 +8,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // 힙 영역 초기화 (kmain에서 한 번 호출)
 void init_heap(uint32_t start_vaddr, uint32_t initial_pages);
 
@@ -19,5 +23,9 @@ void* krealloc(void* ptr, size_t size);
 void dump_heap_stat();
 // 디버깅용 힙 상태 출력
 void dump_heap();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //PARINOS_MALLOC_H

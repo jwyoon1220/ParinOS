@@ -1,7 +1,7 @@
-#include "vga.h"
-#include "gdt.h"
-#include "idt.h"
-#include "keyboard.h"
+#include "hal/vga.h"
+#include "hal/gdt.h"
+#include "hal/idt.h"
+#include "hal/keyboard.h"
 #include "mem/pmm.h"
 #include "drivers/serial.h"
 #include "drivers/timer.h"
@@ -63,6 +63,9 @@ void kmain() {
     ahci_adapter_register_devices(); // AHCI 장치들을 Block Device로 등록
 
     init_fs();
+
+    // 내장 폰트 파일 로드
+    font_load_embedded_ttf(16);
 
     // === 6단계: 멀티태스킹 시스템 초기화 ===
     init_multitasking();

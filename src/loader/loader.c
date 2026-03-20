@@ -11,9 +11,9 @@
 
 /* 디스크/메모리 레이아웃 상수 */
 #define KERNEL_LBA_START    129         /* 커널 ELF 시작 LBA */
-#define ELF_TEMP_ADDR       0x200000    /* kernel.elf 임시 버퍼 주소 (2MB) */
-/* ELF 임시 버퍼 최대 크기 (1MB): 디스크 이미지 전체가 1MB이므로 이 이상 필요 없음 */
-#define ELF_BUF_MAX         0x100000
+#define ELF_TEMP_ADDR       0x01000000  /* kernel.elf 임시 버퍼 주소 (16MB) */
+/* ELF 임시 버퍼 최대 크기 (8MB) */
+#define ELF_BUF_MAX         0x00800000
 
 /* 로더 오류 코드 */
 #define LERR_DISK           -1  /* ATA 디스크 읽기 오류 */

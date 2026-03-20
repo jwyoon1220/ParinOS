@@ -4,7 +4,7 @@
 
 #include "sda.h"
 
-#include "../vga.h"
+#include "../hal/vga.h"
 #include "../std/malloc.h"
 #include "../drivers/timer.h"
 #include "../std/string.h"

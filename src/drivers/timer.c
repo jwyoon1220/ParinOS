@@ -3,9 +3,9 @@
 //
 
 #include "timer.h"
-#include "../idt.h"
-#include "../io.h"
-#include "../vga.h"
+#include "../hal/idt.h"
+#include "../hal/io.h"
+#include "../hal/vga.h"
 #include "../drivers/serial.h"
 #include "../util/util.h"
 

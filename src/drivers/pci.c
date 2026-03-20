@@ -3,8 +3,8 @@
 //
 
 #include "pci.h"
-#include "../vga.h"
-#include "../io.h"
+#include "../hal/vga.h"
+#include "../hal/io.h"
 #include "../std/malloc.h"
 #include <stddef.h>
 

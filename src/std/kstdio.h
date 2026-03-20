@@ -10,6 +10,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ── 출력 (vga.h 래퍼) ────────────────────────────────────────────────────── */
 
 /** kprintf — 커널 포맷 출력 (vga.h 의 kprintf 와 동일 프로토타입) */
@@ -50,5 +54,9 @@ int ksscanf(const char *src, const char *fmt, ...);
  * @return 읽은 문자 수 (NUL 제외)
  */
 int keyboard_readline(char *buf, int maxlen);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PARINOS_KSTDIO_H */

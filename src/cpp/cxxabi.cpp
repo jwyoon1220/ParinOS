@@ -10,7 +10,7 @@
 
 extern "C" {
 #include "../std/malloc.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 }
 
 #include <stddef.h>

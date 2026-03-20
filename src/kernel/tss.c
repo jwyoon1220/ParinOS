@@ -4,7 +4,7 @@
 //
 
 #include "tss.h"
-#include "../vga.h"
+#include "../hal/vga.h"
 
 // 전역 TSS 인스턴스 (단일 프로세서, 단일 TSS)
 static tss_t tss;

@@ -5,8 +5,8 @@
 //
 
 #include "speaker.h"
-#include "../io.h"
-#include "../vga.h"
+#include "../hal/io.h"
+#include "../hal/vga.h"
 #include "../drivers/timer.h"
 #include "../fs/fs.h"
 #include "../fs/fat.h"

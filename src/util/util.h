@@ -7,7 +7,7 @@
 
 #include "../std/string.h"
 
-#include "../io.h"
+#include "../hal/io.h"
 
 
 #endif //PARINOS_UTIL_H

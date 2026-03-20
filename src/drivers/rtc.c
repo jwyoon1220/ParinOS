@@ -3,7 +3,7 @@
 //
 
 #include "rtc.h"
-#include "../io.h" // outb, inb가 정의된 곳
+#include "../hal/io.h" // outb, inb가 정의된 곳
 
 #define CMOS_ADDR 0x70
 #define CMOS_DATA 0x71
