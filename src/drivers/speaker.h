@@ -25,28 +25,15 @@
 #define PIT_BASE_FREQ      1193180UL
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WAV 파일 헤더 구조체 (PCM, little-endian)
+// WAV 파싱 결과 구조체
+// (고정 바이트 오프셋 대신 청크 스캔으로 채워짐 — speaker.c 참고)
 // ─────────────────────────────────────────────────────────────────────────────
-#pragma pack(push, 1)
 typedef struct {
-    // RIFF 청크
-    char     riff_id[4];    // "RIFF"
-    uint32_t file_size;     // 파일 전체 크기 - 8
-    char     wave_id[4];    // "WAVE"
-    // fmt 청크
-    char     fmt_id[4];     // "fmt "
-    uint32_t fmt_size;      // fmt 청크 크기 (PCM = 16)
-    uint16_t audio_format;  // PCM = 1
-    uint16_t num_channels;  // 1 = mono, 2 = stereo
-    uint32_t sample_rate;   // 예: 8000, 22050, 44100
-    uint32_t byte_rate;     // sample_rate * num_channels * bits/8
-    uint16_t block_align;   // num_channels * bits/8
-    uint16_t bits_per_sample; // 8 또는 16
-    // data 청크
-    char     data_id[4];    // "data"
-    uint32_t data_size;     // 오디오 데이터 크기
-} wav_header_t;
-#pragma pack(pop)
+    uint32_t sample_rate;      // 예: 8000, 22050, 44100
+    uint16_t num_channels;     // 1 = mono, 2 = stereo
+    uint16_t bits_per_sample;  // 8 또는 16
+    uint32_t data_size;        // audio data 바이트 수
+} wav_info_t;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API
