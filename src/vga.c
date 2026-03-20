@@ -220,3 +220,88 @@ void kprintf(const char* format, ...) {
     }
     va_end(args);
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// Linux 스타일 컬러 로깅 함수
+// 각 로그 레벨마다 컬러 태그를 출력하고, 메시지는 기본 색상으로 출력합니다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// kprintf와 동일하지만 va_list를 받는 내부 헬퍼
+static void kvprintf(const char* format, va_list args) {
+    for (int i = 0; format[i] != '\0'; i++) {
+        if (format[i] == '%' && format[i + 1] != '\0') {
+            i++;
+            char pad_char = ' ';
+            int width = 0;
+            if (format[i] == '0') { pad_char = '0'; i++; }
+            while (format[i] >= '0' && format[i] <= '9') {
+                width = width * 10 + (format[i] - '0');
+                i++;
+            }
+            switch (format[i]) {
+                case 'd': case 'i':
+                    print_number(va_arg(args, uint32_t), 10, 1, width, pad_char, 0); break;
+                case 'u':
+                    print_number(va_arg(args, uint32_t), 10, 0, width, pad_char, 0); break;
+                case 'x':
+                    print_number(va_arg(args, uint32_t), 16, 0, width, pad_char, 0); break;
+                case 'X':
+                    print_number(va_arg(args, uint32_t), 16, 0, width, pad_char, 1); break;
+                case 'p':
+                    kprint("0x");
+                    print_number(va_arg(args, uint32_t), 16, 0, width > 0 ? width : 8, '0', 1); break;
+                case 'c':
+                    lkputchar((char)va_arg(args, int)); break;
+                case 's': {
+                    char* s = va_arg(args, char*);
+                    if (!s) s = "(null)";
+                    kprint(s);
+                    break;
+                }
+                case '%': lkputchar('%'); break;
+                default:  lkputchar('%'); lkputchar(format[i]); break;
+            }
+        } else {
+            lkputchar(format[i]);
+        }
+    }
+}
+
+static void klog_emit(uint8_t label_color, const char* label,
+                      const char* fmt, va_list args) {
+    uint8_t saved = default_color;
+    vga_set_color(label_color);
+    kprint(label);
+    vga_set_color(VGA_COLOR_DEFAULT);
+    kvprintf(fmt, args);
+    vga_set_color(saved);
+}
+
+void klog_info(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    klog_emit(VGA_COLOR_INFO,  "[ INFO ] ", fmt, args);
+    va_end(args);
+}
+
+void klog_warn(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    klog_emit(VGA_COLOR_WARN,  "[ WARN ] ", fmt, args);
+    va_end(args);
+}
+
+void klog_error(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    klog_emit(VGA_COLOR_ERROR, "[ERROR ] ", fmt, args);
+    va_end(args);
+}
+
+void klog_debug(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    klog_emit(VGA_COLOR_DEBUG, "[DEBUG ] ", fmt, args);
+    va_end(args);
+}
+
+void klog_ok(const char* fmt, ...) {
+    va_list args; va_start(args, fmt);
+    klog_emit(VGA_COLOR_SUCCESS, "[ OK  ] ", fmt, args);
+    va_end(args);
+}
