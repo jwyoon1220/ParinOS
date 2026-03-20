@@ -37,6 +37,12 @@ _start:
     mov si, MSG_OK
     call print_string
 
+    ; [추가] BIOS 8×8 폰트 포인터를 0x9100 에 저장
+    call get_bios_font
+
+    ; [추가] VESA 그래픽 모드 설정 (모드 정보를 0x9000 에 저장)
+    call setup_vesa
+
     ; 7. A20 게이트 활성화 (1MB 이상 메모리 접근 허용)
     call enable_a20
 
@@ -131,6 +137,58 @@ enable_a20:
     or al, 0x02             ; A20 비트 활성화
     and al, 0xFE            ; 시스템 리셋 방지 (비트 0 = 0)
     out 0x92, al
+    ret
+
+; --- [함수: BIOS 8×8 폰트 포인터 저장 → 0x9100] ---
+; INT 10h/1130h/BH=6 : ES:BP → 8×8 폰트 데이터
+; BP/ES 를 보존할 필요 없음 (이후 바로 보호 모드 진입)
+get_bios_font:
+    mov ax, 0x1130
+    mov bh, 0x06
+    int 0x10
+    mov word [0x9100], bp
+    mov word [0x9102], es
+    ret
+
+; --- [함수: VESA 모드 설정 → 모드 정보 0x9000 저장] ---
+; 0x0118 (1024×768×24bpp) 먼저 시도, 실패 시 0x0115 (800×600×24bpp)
+; ES/DI 는 보존 불필요 (이후 보호 모드 진입)
+setup_vesa:
+    xor ax, ax
+    mov es, ax
+    mov di, 0x9000
+    ; 시도 1: 1024×768×24bpp
+    mov ax, 0x4F01
+    mov cx, 0x0118
+    int 0x10
+    cmp ax, 0x004F
+    jne .try2
+    test word [0x9000], 0x0001
+    jz .try2
+    mov ax, 0x4F02
+    mov bx, 0x4118          ; mode | 0x4000 (LFB)
+    int 0x10
+    cmp ax, 0x004F
+    je .ok
+.try2:
+    ; 시도 2: 800×600×24bpp (4F01h 가 0x9000 덮어씀)
+    mov di, 0x9000
+    mov ax, 0x4F01
+    mov cx, 0x0115
+    int 0x10
+    cmp ax, 0x004F
+    jne .fail
+    test word [0x9000], 0x0001
+    jz .fail
+    mov ax, 0x4F02
+    mov bx, 0x4115
+    int 0x10
+    cmp ax, 0x004F
+    je .ok
+.fail:
+    mov word [0x9028], 0    ; framebuffer = 0 → VESA 불가 신호
+    mov word [0x902A], 0
+.ok:
     ret
 
 ; --- [함수: 16비트 문자열 출력] ---

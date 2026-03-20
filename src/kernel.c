@@ -13,10 +13,20 @@
 #include "storge/ahci_adaptor.h"
 #include "fs/fs.h"
 #include "kernel/multitasking.h"
+#include "kernel/fpu.h"
+#include "drivers/vesa.h"
+#include "font/font.h"
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
 void kmain() {
+    /* ── 부동소수점 연산 유닛(FPU) 활성화 ──────────────────────────────── */
+    fpu_init();
+
+    /* ── VESA / 폰트 정보 사전 수집 (페이징 활성화 전) ──────────────────── */
+    vesa_init();    /* VBE 모드 정보 읽기 (framebuffer 물리 주소 저장)  */
+    font_init();    /* BIOS 8×8 폰트 포인터 읽기 (0x9100)               */
+
     // 화면 초기화
     vga_clear();
 
@@ -28,6 +38,12 @@ void kmain() {
     init_pmm();   // 물리 메모리 관리자
     init_vmm();   // 가상 메모리 관리자
     init_heap(0x800000, 10);  // 커널 힙
+
+    /* ── VMM 페이징 활성화 후 VESA 프레임버퍼 매핑 ──────────────────────── */
+    vesa_map_fb();  /* 프레임버퍼를 가상 주소 공간에 identity 매핑       */
+    if (vesa_is_active()) {
+        vga_clear(); /* VESA 모드로 화면 클리어                          */
+    }
 
     // === 3단계: 하드웨어 드라이버 ===
     init_timer(1000);         // 타이머 (인터럽트 전에)

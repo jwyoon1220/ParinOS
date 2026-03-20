@@ -3,10 +3,36 @@
 #include "io.h"
 #include "drivers/serial.h"
 #include "std/string.h"
+#include "drivers/vesa.h"
+#include "font/font.h"
 
 int cursor_x = 0;
 int cursor_y = 0;
 uint8_t default_color = 0x0F;
+
+/* ─── VESA 텍스트 커서 (픽셀 단위) ─────────────────────────────────────── */
+static int vesa_cx = 0;
+static int vesa_cy = 0;
+
+/* VGA 16색 팔레트 → RGB 변환 표 */
+static const uint8_t vga_rgb[16][3] = {
+    {  0,   0,   0},   /* 0: Black        */
+    {  0,   0, 170},   /* 1: Blue         */
+    {  0, 170,   0},   /* 2: Green        */
+    {  0, 170, 170},   /* 3: Cyan         */
+    {170,   0,   0},   /* 4: Red          */
+    {170,   0, 170},   /* 5: Magenta      */
+    {170,  85,   0},   /* 6: Brown        */
+    {170, 170, 170},   /* 7: Light Gray   */
+    { 85,  85,  85},   /* 8: Dark Gray    */
+    { 85,  85, 255},   /* 9: Light Blue   */
+    { 85, 255,  85},   /* A: Light Green  */
+    { 85, 255, 255},   /* B: Light Cyan   */
+    {255,  85,  85},   /* C: Light Red    */
+    {255,  85, 255},   /* D: Light Magenta*/
+    {255, 255,  85},   /* E: Yellow       */
+    {255, 255, 255},   /* F: White        */
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 하드웨어 커서 및 화면 관리
@@ -33,6 +59,13 @@ static void vga_scroll() {
 }
 
 void vga_clear() {
+    if (vesa_is_active() && font_is_ready()) {
+        vesa_clear(0, 0, 0);
+        vesa_cx = 0;
+        vesa_cy = 0;
+        kprintf_serial("[VESA] Screen Cleared\n");
+        return;
+    }
     char* video_memory = (char*)0xB8000;
     for (int i = 0; i < 80 * 25; i++) {
         video_memory[i * 2] = ' ';
@@ -52,6 +85,59 @@ void vga_set_color(uint8_t color) {
 // 단일 문자 및 문자열 출력 로직
 // ─────────────────────────────────────────────────────────────────────────────
 void lkputchar(char c) {
+    if (vesa_is_active() && font_is_ready()) {
+        /* ── VESA 픽셀 폰트 출력 경로 ── */
+        int fw = font_get_width();
+        int fh = font_get_height();
+        int sw = (int)vesa_get_width();
+        int sh = (int)vesa_get_height();
+
+        uint8_t fg_idx = default_color & 0x0Fu;
+        uint8_t bg_idx = (default_color >> 4) & 0x0Fu;
+        uint8_t r_fg = vga_rgb[fg_idx][0];
+        uint8_t g_fg = vga_rgb[fg_idx][1];
+        uint8_t b_fg = vga_rgb[fg_idx][2];
+        uint8_t r_bg = vga_rgb[bg_idx][0];
+        uint8_t g_bg = vga_rgb[bg_idx][1];
+        uint8_t b_bg = vga_rgb[bg_idx][2];
+
+        if (c == '\n') {
+            vesa_cx = 0;
+            vesa_cy += fh;
+        } else if (c == '\r') {
+            vesa_cx = 0;
+        } else if (c == '\b') {
+            if (vesa_cx >= fw) {
+                vesa_cx -= fw;
+                vesa_fill_rect((uint32_t)vesa_cx, (uint32_t)vesa_cy,
+                               (uint32_t)fw, (uint32_t)fh,
+                               r_bg, g_bg, b_bg);
+            }
+            write_serial('\b'); write_serial(' '); write_serial('\b');
+            return;
+        } else {
+            font_draw_char(vesa_cx, vesa_cy, c,
+                           r_fg, g_fg, b_fg,
+                           r_bg, g_bg, b_bg);
+            vesa_cx += fw;
+            if (vesa_cx + fw > sw) {
+                vesa_cx = 0;
+                vesa_cy += fh;
+            }
+        }
+
+        /* 스크롤 */
+        if (vesa_cy + fh > sh) {
+            vesa_scroll_up((uint32_t)fh);
+            vesa_cy -= fh;
+        }
+
+        if (c == '\n') write_serial('\r');
+        write_serial(c);
+        return;
+    }
+
+    /* ── 기존 VGA 텍스트 모드 출력 경로 ── */
     char* video_memory = (char*)0xB8000;
     if (c == '\n') {
         cursor_x = 0;
