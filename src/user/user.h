@@ -40,11 +40,14 @@
 // Linux 호환 시스템 콜 번호 (int 0x80)
 // ─────────────────────────────────────────────────────────────────────────────
 #define SYS_EXIT         1
-#define SYS_WRITE        4
+#define SYS_EXEC         11   // execve (path, argc, argv)
 #define SYS_READ         3
+#define SYS_WRITE        4
 #define SYS_OPEN         5
 #define SYS_CLOSE        6
+#define SYS_LSEEK        19
 #define SYS_GETPID       20
+#define SYS_BRK          45
 #define SYS_YIELD        158  // sched_yield
 
 // ─────────────────────────────────────────────────────────────────────────────

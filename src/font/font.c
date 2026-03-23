@@ -9,7 +9,7 @@
 #include "../drivers/vesa.h"
 #include "../std/malloc.h"
 #include "../mem/mem.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../hal/vga.h"
 #include "../fs/fs.h"
 #include "../fs/fat.h"

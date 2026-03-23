@@ -2,7 +2,7 @@
 #include <stdarg.h>
 #include "io.h"
 #include "../drivers/serial.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../drivers/vesa.h"
 #include "../font/font.h"
 

@@ -2,7 +2,7 @@
 // Copyright (c) 2025, Bjørn Brodtkorb. All rights reserved.
 
 #include "fat.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../mem/mem.h"
 
 //------------------------------------------------------------------------------

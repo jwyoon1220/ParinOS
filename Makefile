@@ -6,6 +6,10 @@ LD  = i686-linux-gnu-ld
 NM  = i686-linux-gnu-nm
 OBJCOPY = objcopy
 
+# 유저 프로그램 컴파일러: 크로스 컴파일러 우선, 없으면 네이티브 gcc -m32 사용
+UPCC := $(shell which i686-linux-gnu-gcc 2>/dev/null || echo gcc)
+UPLD := $(shell which i686-linux-gnu-ld  2>/dev/null || echo ld)
+
 # --- 경로 및 파일 설정 ---
 SRC_DIR   = src
 ASM_DIR   = $(SRC_DIR)/asm
@@ -44,12 +48,35 @@ FONT_OBJECT= $(BUILD_DIR)/font_ttf.o
 
 LOADER_PAD_SIZE = 65536
 
+# --- 유저 프로그램 설정 ---
+USERPROG_DIR    = $(SRC_DIR)/userprog
+USERPROG_INC    = $(USERPROG_DIR)/include
+USERPROG_LIB    = $(USERPROG_DIR)/lib
+USERPROG_LD     = $(USERPROG_DIR)/userprog.ld
+USERPROG_BINDIR = $(DISK_SRC)/bin
+
+# -nostdinc 제거: 컴파일러 기본 헤더(stdint.h, stdarg.h, stddef.h 등) 사용
+USERPROG_CFLAGS  = -ffreestanding -nostdlib -m32 -fno-pic \
+                   -fno-stack-protector -O2 -Wall -Wextra \
+                   -I$(USERPROG_INC)
+USERPROG_LDFLAGS = -m elf_i386 -nostdlib -T $(USERPROG_LD)
+# 유저 라이브러리 소스 (lib/*.c)
+USERPROG_LIB_SRCS = $(wildcard $(USERPROG_LIB)/*.c)
+USERPROG_LIB_OBJS = $(patsubst $(USERPROG_LIB)/%.c, \
+                      $(BUILD_DIR)/userprog/lib/%.o, $(USERPROG_LIB_SRCS))
+
+# 유저 프로그램 소스 (userprog/*.c)
+USERPROG_SRCS = $(wildcard $(USERPROG_DIR)/*.c)
+USERPROG_BINS = $(patsubst $(USERPROG_DIR)/%.c, $(USERPROG_BINDIR)/%, $(USERPROG_SRCS))
+
 # --- 기본 타겟 ---
-all: prep $(IMAGE) $(KERNEL_SYM) $(DISK_IMG)
+all: prep $(IMAGE) $(KERNEL_SYM) userprog $(DISK_IMG)
 
 prep:
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(DISK_SRC)
+	@mkdir -p $(BUILD_DIR)/userprog/lib
+	@mkdir -p $(USERPROG_BINDIR)
 
 # --- 빌드 규칙 ---
 
@@ -120,6 +147,25 @@ $(DISK_IMG):
 
 # --- 유틸리티 타겟 ---
 
+# 유저 라이브러리 오브젝트 컴파일
+$(BUILD_DIR)/userprog/lib/%.o: $(USERPROG_LIB)/%.c
+	@mkdir -p $(dir $@)
+	$(UPCC) $(USERPROG_CFLAGS) -c $< -o $@
+
+# 유저 프로그램 오브젝트 컴파일
+$(BUILD_DIR)/userprog/%.o: $(USERPROG_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(UPCC) $(USERPROG_CFLAGS) -c $< -o $@
+
+# 유저 프로그램 링크 (프로그램 오브젝트 + 라이브러리)
+$(USERPROG_BINDIR)/%: $(BUILD_DIR)/userprog/%.o $(USERPROG_LIB_OBJS)
+	@mkdir -p $(dir $@)
+	$(UPLD) $(USERPROG_LDFLAGS) $^ -o $@
+
+# 유저 프로그램 전체 빌드 타겟
+userprog: $(USERPROG_BINS)
+	@echo "User programs built: $(USERPROG_BINS)"
+
 headers:
 	@mkdir -p $(INC_DEST)
 	@echo "Copying header files to $(INC_DEST)..."
@@ -138,4 +184,4 @@ run: all headers
 clean:
 	rm -rf $(BUILD_DIR) $(KERNEL_SYM) $(DISK_IMG) $(INC_DEST)
 
-.PHONY: all prep headers run clean
+.PHONY: all prep headers run clean userprog

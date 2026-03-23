@@ -7,7 +7,7 @@
 #include "../hal/vga.h"
 #include "../std/malloc.h"
 #include "../drivers/timer.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../mem/mem.h"
 
 // Block Device Manager 전역 상태

@@ -6,7 +6,7 @@
 #include "../drivers/ahci.h"
 #include "../hal/vga.h"
 #include "../std/malloc.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 
 // =============================================================================
 // AHCI Block Device Operations

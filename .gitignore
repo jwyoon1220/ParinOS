@@ -1,1 +1,6 @@
 /makefile-build/
+*.o
+/disk_src/bin/
+/kernel.sym
+/disk.img
+/include/

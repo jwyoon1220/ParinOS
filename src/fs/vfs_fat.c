@@ -7,7 +7,7 @@
 #include "fat.h"
 #include "../hal/vga.h"
 #include "../std/malloc.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../mem/mem.h"
 
 /* 파일 핸들 래퍼: File + Dir 모두 담을 수 있는 공용체 */
