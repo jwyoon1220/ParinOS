@@ -1,9 +1,9 @@
 //
-// Created by jwyoo on 26. 3. 7..
+// src/std/kstring.h — 커널 문자열 함수
 //
 
-#ifndef PARINOS_STRING_H
-#define PARINOS_STRING_H
+#ifndef PARINOS_KSTRING_H
+#define PARINOS_KSTRING_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -19,7 +19,7 @@ int strncmp(const char *s1, const char *s2, int n);
 /* 문자열 길이 확인 */
 int strlen(const char *s);
 
-/* 문자열 결합 함수 (🌟 src에 const 추가) */
+/* 문자열 결합 함수 */
 char* strcat(char *dest, const char *src);
 char* strncat(char *dest, const char *src, int n);
 
@@ -35,4 +35,4 @@ int snprintf(char* buffer, size_t size, const char* format, ...);
 }
 #endif
 
-#endif //PARINOS_STRING_H
+#endif /* PARINOS_KSTRING_H */

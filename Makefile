@@ -55,7 +55,8 @@ USERPROG_LIB    = $(USERPROG_DIR)/lib
 USERPROG_LD     = $(USERPROG_DIR)/userprog.ld
 USERPROG_BINDIR = $(DISK_SRC)/bin
 
-USERPROG_CFLAGS  = -ffreestanding -nostdlib -nostdinc -m32 -fno-pic \
+# -nostdinc 제거: 컴파일러 기본 헤더(stdint.h, stdarg.h, stddef.h 등) 사용
+USERPROG_CFLAGS  = -ffreestanding -nostdlib -m32 -fno-pic \
                    -fno-stack-protector -O2 -Wall -Wextra \
                    -I$(USERPROG_INC)
 USERPROG_LDFLAGS = -m elf_i386 -nostdlib -T $(USERPROG_LD)

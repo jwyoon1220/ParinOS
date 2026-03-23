@@ -8,7 +8,7 @@
 
 #include "multitasking.h"
 #include "../std/malloc.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../hal/vga.h"
 #include "../hal/io.h"
 #include "../drivers/timer.h"

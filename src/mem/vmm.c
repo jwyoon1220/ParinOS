@@ -6,7 +6,7 @@
 #include "pmm.h"
 #include "mem.h"
 #include "../hal/vga.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../kernel/kernel_status_manager.h"
 #include "../hal/hal.h"
 

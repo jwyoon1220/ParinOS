@@ -6,7 +6,7 @@
 #include "../hal/vga.h"
 #include "../mem/mem.h"
 #include "../std/malloc.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 
 /* ── 마운트 테이블 ────────────────────────────────────────────────────────── */
 #define VFS_MAX_MOUNTS  8

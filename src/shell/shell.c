@@ -1,5 +1,5 @@
 #include "shell.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../hal/vga.h"
 #include "../mem/pmm.h"
 #include "../std/malloc.h"

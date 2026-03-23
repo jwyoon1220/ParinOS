@@ -6,7 +6,7 @@
 #define PARINOS_KSTD_H
 
 #include "../std/malloc.h"
-#include "../std/string.h"
+#include "../std/kstring.h"
 #include "../mem/mem.h"
 
 #define RUN_SUCCESS 0
