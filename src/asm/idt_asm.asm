@@ -4,6 +4,7 @@ global idt_load
 global irq0_handler
 global irq1_handler
 global syscall_handler
+global sysenter_handler
 
 extern keyboard_handler_main
 extern scheduler_tick
@@ -161,3 +162,56 @@ syscall_handler:
     pop ds
 
     iretd
+
+; ─────────────────────────────────────────────────────────────────────────────
+; 5. SYSENTER 핸들러 (Ring 3 → Ring 0 빠른 시스템 콜 진입)
+;
+;    sysenter 레지스터 규약 (유저 측에서 진입 전 설정):
+;      EAX = 시스템 콜 번호
+;      EBX = 인자 1, ECX = 인자 2, EDX = 인자 3
+;      ESI = 복귀 EIP (sysexit 가 ECX 로 사용)
+;      EBP = 복귀 ESP (sysexit 가 EDX 로 사용)
+;
+;    sysenter 실행 시 CPU 동작:
+;      CS  ← SYSENTER_CS_MSR (0x08)
+;      EIP ← SYSENTER_EIP_MSR (이 핸들러 주소)
+;      SS  ← SYSENTER_CS_MSR + 8 (0x10)
+;      ESP ← SYSENTER_ESP_MSR (커널 스택)
+; ─────────────────────────────────────────────────────────────────────────────
+sysenter_handler:
+    ; 유저 복귀 정보를 커널 스택에 저장
+    push ebp            ; 복귀 ESP (sysexit EDX 용)
+    push esi            ; 복귀 EIP (sysexit ECX 용)
+
+    ; 커널 데이터 세그먼트 로드
+    push ds
+    push es
+    push fs
+    push gs
+
+    mov cx, 0x10
+    mov ds, cx
+    mov es, cx
+    mov fs, cx
+    mov gs, cx
+
+    ; syscall_dispatch(eax, ebx, ecx, edx) 호출
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call syscall_dispatch
+    add esp, 16         ; 인자 4개 정리
+
+    ; EAX = 반환값
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+
+    ; sysexit 복귀: ECX = 유저 EIP, EDX = 유저 ESP
+    pop ecx             ; 복귀 EIP
+    pop edx             ; 복귀 ESP
+
+    sysexit

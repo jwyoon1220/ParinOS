@@ -287,6 +287,14 @@ uint32_t syscall_dispatch(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx
     }
 }
 
+// SYSENTER 커널 스택 (4KB, 정적 할당)
+static uint8_t sysenter_stack[4096];
+
+// wrmsr 헬퍼: MSR 레지스터에 32비트 값 쓰기
+static inline void wrmsr(uint32_t msr, uint32_t val) {
+    __asm__ volatile ("wrmsr" : : "c"(msr), "a"(val), "d"(0));
+}
+
 // syscall_init은 idt.c에서 int 0x80 핸들러를 등록한 뒤 호출됩니다.
 void syscall_init(void) {
     // FD 테이블 초기화
@@ -294,5 +302,14 @@ void syscall_init(void) {
         g_fd_table[i]  = NULL;
         g_fd_is_dir[i] = 0;
     }
-    klog_info("[SYSCALL] System call interface ready (int 0x80)\n");
+
+    // SYSENTER MSR 설정
+    // CS: 커널 코드 세그먼트 (0x08), sysexit 시 유저 CS = 0x08+16 = 0x18|3 = 0x1B
+    wrmsr(MSR_SYSENTER_CS,  0x08);
+    // EIP: sysenter 진입점
+    wrmsr(MSR_SYSENTER_EIP, (uint32_t)sysenter_handler);
+    // ESP: 커널 스택 최상단 (스택은 하향 성장)
+    wrmsr(MSR_SYSENTER_ESP, (uint32_t)(sysenter_stack + sizeof(sysenter_stack)));
+
+    klog_info("[SYSCALL] System call interface ready (int 0x80 + sysenter)\n");
 }

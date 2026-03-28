@@ -17,8 +17,9 @@ INC       := $(TOP)/include
 LD_SCRIPT := $(SELF_DIR)/userprog.ld
 
 # ── 컴파일러 설정 ────────────────────────────────────────────────────────
-UPCC := $(shell which i686-linux-gnu-gcc 2>/dev/null || echo gcc)
-UPLD := $(shell which i686-linux-gnu-ld  2>/dev/null || echo ld)
+UPCC  := $(shell which i686-linux-gnu-gcc 2>/dev/null || echo gcc)
+UPLD  := $(shell which i686-linux-gnu-ld  2>/dev/null || echo ld)
+UPAS  := $(shell which nasm 2>/dev/null || echo nasm)
 
 CFLAGS  := -ffreestanding -nostdlib -m32 -fno-pic \
            -fno-stack-protector -O2 -Wall -Wextra \
@@ -30,6 +31,7 @@ LIB_DIR  := $(SELF_DIR)/lib
 LIB_SRCS := $(LIB_DIR)/crt0.c $(LIB_DIR)/stdio.c \
             $(LIB_DIR)/stdlib.c $(LIB_DIR)/string.c
 LIB_OBJS := $(patsubst $(LIB_DIR)/%.c, $(BUILD)/lib/%.o, $(LIB_SRCS))
+LIB_OBJS += $(BUILD)/lib/syscall.o
 
 # ── 프로그램 목록 ────────────────────────────────────────────────────────
 PROGS := shell cat echo ls mkdir rm cp
@@ -50,6 +52,10 @@ lib: $(LIB_OBJS)
 $(BUILD)/lib/%.o: $(LIB_DIR)/%.c
 	@mkdir -p $(BUILD)/lib
 	$(UPCC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/lib/syscall.o: $(LIB_DIR)/syscall.asm
+	@mkdir -p $(BUILD)/lib
+	$(UPAS) -f elf32 $< -o $@
 
 # ── 개별 프로그램 빌드 규칙 생성 매크로 ──────────────────────────────────
 define PROG_template

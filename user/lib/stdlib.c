@@ -10,12 +10,7 @@
 
 /* ── exit ────────────────────────────────────────────────────────────── */
 void exit(int code) {
-    __asm__ volatile (
-        "int $0x80"
-        :
-        : "a"(SYS_EXIT), "b"(code)
-        : "memory"
-    );
+    syscall1(SYS_EXIT, code);
     while (1) {}
 }
 

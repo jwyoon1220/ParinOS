@@ -11,13 +11,7 @@ extern int main(int argc, const char **argv);
 
 void _start(int argc, const char **argv) {
     int ret = main(argc, argv);
-    /* SYS_EXIT 호출 */
-    __asm__ volatile (
-        "int $0x80"
-        :
-        : "a"(SYS_EXIT), "b"(ret)
-        : "memory"
-    );
+    syscall1(SYS_EXIT, ret);
     /* 도달하지 않음 */
     while (1) {}
 }
