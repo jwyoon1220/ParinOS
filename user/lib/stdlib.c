@@ -4,9 +4,9 @@
  * malloc/free: 정적 힙 풀 기반 (단순 First-Fit 알고리즘)
  */
 
-#include "../include/stdlib.h"
-#include "../include/syscall.h"
-#include "../include/string.h"
+#include "stdlib.h"
+#include "syscall.h"
+#include "string.h"
 
 /* ── exit ────────────────────────────────────────────────────────────── */
 void exit(int code) {

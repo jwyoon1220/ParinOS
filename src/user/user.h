@@ -48,7 +48,15 @@
 #define SYS_LSEEK        19
 #define SYS_GETPID       20
 #define SYS_BRK          45
+#define SYS_STAT         106  // stat (파일 정보)
 #define SYS_YIELD        158  // sched_yield
+
+// ParinOS 확장 시스템 콜
+#define SYS_UNLINK       10   // unlink (파일 삭제)
+#define SYS_MKDIR        39   // mkdir (디렉터리 생성)
+#define SYS_OPENDIR      200  // opendir (디렉터리 열기)
+#define SYS_READDIR      201  // readdir (디렉터리 엔트리 읽기)
+#define SYS_CLOSEDIR     202  // closedir (디렉터리 닫기)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 유저 프로세스 디스크립터

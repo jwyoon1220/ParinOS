@@ -32,8 +32,14 @@ LDFLAGS        = -m elf_i386 -nostdlib -no-pie -T kernel.ld
 LDFLAGS_LOADER = -m elf_i386 -nostdlib -no-pie -T loader.ld
 
 # --- 소스 및 오브젝트 리스트 ---
-C_SOURCES   = $(shell find $(SRC_DIR) -name "*.c" -not -path "$(LOADER_DIR)/*")
-CXX_SOURCES = $(shell find $(SRC_DIR) -name "*.cpp" -not -path "$(LOADER_DIR)/*")
+# src/userprog/ 는 유저 프로그램이므로 커널 빌드에서 제외합니다.
+# 새 유저 프로그램은 user/ 디렉터리에서 관리됩니다.
+C_SOURCES   = $(shell find $(SRC_DIR) -name "*.c" \
+                  -not -path "$(LOADER_DIR)/*" \
+                  -not -path "$(SRC_DIR)/userprog/*")
+CXX_SOURCES = $(shell find $(SRC_DIR) -name "*.cpp" \
+                  -not -path "$(LOADER_DIR)/*" \
+                  -not -path "$(SRC_DIR)/userprog/*")
 ALL_ASM     = $(shell find $(ASM_DIR) -name "*.asm")
 ASM_SOURCES = $(filter-out $(ASM_DIR)/boot.asm $(ASM_DIR)/kernel_entry.asm $(ASM_DIR)/loader_entry.asm, $(ALL_ASM))
 LOADER_C_SOURCES = $(wildcard $(LOADER_DIR)/*.c)
@@ -48,7 +54,7 @@ FONT_OBJECT= $(BUILD_DIR)/font_ttf.o
 
 LOADER_PAD_SIZE = 65536
 
-# --- 유저 프로그램 설정 ---
+# --- 유저 프로그램 설정 (레거시 src/userprog/ - 하위 호환 유지) ---
 USERPROG_DIR    = $(SRC_DIR)/userprog
 USERPROG_INC    = $(USERPROG_DIR)/include
 USERPROG_LIB    = $(USERPROG_DIR)/lib
@@ -65,12 +71,12 @@ USERPROG_LIB_SRCS = $(wildcard $(USERPROG_LIB)/*.c)
 USERPROG_LIB_OBJS = $(patsubst $(USERPROG_LIB)/%.c, \
                       $(BUILD_DIR)/userprog/lib/%.o, $(USERPROG_LIB_SRCS))
 
-# 유저 프로그램 소스 (userprog/*.c)
+# 유저 프로그램 소스 (userprog/*.c) - 레거시 (src/userprog/)
 USERPROG_SRCS = $(wildcard $(USERPROG_DIR)/*.c)
 USERPROG_BINS = $(patsubst $(USERPROG_DIR)/%.c, $(USERPROG_BINDIR)/%, $(USERPROG_SRCS))
 
 # --- 기본 타겟 ---
-all: prep $(IMAGE) $(KERNEL_SYM) userprog $(DISK_IMG)
+all: prep $(IMAGE) $(KERNEL_SYM) user $(DISK_IMG)
 
 prep:
 	@mkdir -p $(BUILD_DIR)
@@ -147,29 +153,34 @@ $(DISK_IMG):
 
 # --- 유틸리티 타겟 ---
 
-# 유저 라이브러리 오브젝트 컴파일
+# 유저 라이브러리 오브젝트 컴파일 (레거시 src/userprog/ 지원)
 $(BUILD_DIR)/userprog/lib/%.o: $(USERPROG_LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(UPCC) $(USERPROG_CFLAGS) -c $< -o $@
 
-# 유저 프로그램 오브젝트 컴파일
+# 유저 프로그램 오브젝트 컴파일 (레거시)
 $(BUILD_DIR)/userprog/%.o: $(USERPROG_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(UPCC) $(USERPROG_CFLAGS) -c $< -o $@
 
-# 유저 프로그램 링크 (프로그램 오브젝트 + 라이브러리)
+# 유저 프로그램 링크 (레거시)
 $(USERPROG_BINDIR)/%: $(BUILD_DIR)/userprog/%.o $(USERPROG_LIB_OBJS)
 	@mkdir -p $(dir $@)
 	$(UPLD) $(USERPROG_LDFLAGS) $^ -o $@
 
-# 유저 프로그램 전체 빌드 타겟
+# 레거시 유저 프로그램 빌드 타겟 (하위 호환)
 userprog: $(USERPROG_BINS)
-	@echo "User programs built: $(USERPROG_BINS)"
+	@echo "Legacy user programs built: $(USERPROG_BINS)"
+
+# 새 user/ 디렉터리 기반 유저 프로그램 빌드
+user:
+	$(MAKE) -C user all
 
 headers:
 	@mkdir -p $(INC_DEST)
 	@echo "Copying header files to $(INC_DEST)..."
 	@cd $(SRC_DIR) && find . -name "*.h" -exec cp --parents \{\} ../$(INC_DEST)/ \;
+	@cp -r include $(INC_DEST)/user
 	@echo "Done."
 
 run: all headers
@@ -184,4 +195,4 @@ run: all headers
 clean:
 	rm -rf $(BUILD_DIR) $(KERNEL_SYM) $(DISK_IMG) $(INC_DEST)
 
-.PHONY: all prep headers run clean userprog
+.PHONY: all prep headers run clean userprog user

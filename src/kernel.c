@@ -16,8 +16,21 @@
 #include "kernel/fpu.h"
 #include "drivers/vesa.h"
 #include "font/font.h"
+#include "elf/elf.h"
+#include "std/kstdio.h"
 
 #define megaOf(x) ((x) * 1024 * 1024)
+
+/* 유저 셸 실행: /bin/shell 을 실행하고 실패 시 커널 셸로 폴백합니다. */
+static void launch_shell(void) {
+    const char *argv[] = { "/bin/shell", (const char*)0 };
+    int ret = elf_execute_with_args("/bin/shell", 1, argv);
+    if (ret != 0) {
+        /* /bin/shell 실행 실패 → 커널 내장 셸로 폴백 */
+        klog_warn("[kernel] /bin/shell 실행 실패 (ret=%d), 커널 셸로 폴백합니다.\n", ret);
+        shell_init();
+    }
+}
 
 void kmain() {
     /* ── 부동소수점 연산 유닛(FPU) 활성화 ──────────────────────────────── */
@@ -72,7 +85,7 @@ void kmain() {
 
     // === 7단계: 사용자 인터페이스 ===
     init_keyboard();          // 키보드 드라이버
-    shell_init();             // 셸 초기화
+    launch_shell();           // 유저 셸 실행 (실패 시 커널 셸 폴백)
 
     while(1) {
         __asm__ __volatile__("hlt");
