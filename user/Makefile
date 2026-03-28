@@ -13,7 +13,7 @@ TOP       := $(abspath $(SELF_DIR)/..)
 
 BINDIR    := $(TOP)/disk_src/bin
 BUILD     := $(TOP)/makefile-build/user
-INC       := $(TOP)/include
+INC       := $(SELF_DIR)/include
 LD_SCRIPT := $(SELF_DIR)/userprog.ld
 
 # ── 컴파일러 설정 ────────────────────────────────────────────────────────
