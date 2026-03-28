@@ -13,12 +13,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 파일 디스크립터 테이블
 // FD 0 = stdin (keyboard), FD 1 = stdout (VGA), FD 2 = stderr (VGA)
-// FD 3..FD_TABLE_MAX-1 = VFS 파일
+// FD 3..FD_TABLE_MAX-1 = VFS 파일 또는 디렉터리
 // ─────────────────────────────────────────────────────────────────────────────
 #define FD_TABLE_MAX  16
 #define FD_FILE_MIN   3
 
 static vfs_node_t* g_fd_table[FD_TABLE_MAX];
+static uint8_t     g_fd_is_dir[FD_TABLE_MAX]; // 1 = 디렉터리 FD
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 개별 시스템 콜 구현
@@ -167,32 +168,148 @@ static uint32_t sys_exec(uint32_t path_vaddr, uint32_t argc, uint32_t argv_vaddr
     return (uint32_t)ret;
 }
 
+// SYS_UNLINK(10): 파일 삭제
+static uint32_t sys_unlink(uint32_t path_vaddr) {
+    const char* path = (const char*)path_vaddr;
+    int err = vfs_unlink(path);
+    return (err == VFS_OK) ? 0 : (uint32_t)-1;
+}
+
+// SYS_MKDIR(39): 디렉터리 생성
+static uint32_t sys_mkdir(uint32_t path_vaddr, uint32_t mode) {
+    (void)mode;
+    const char* path = (const char*)path_vaddr;
+    int err = vfs_mkdir(path);
+    return (err == VFS_OK) ? 0 : (uint32_t)-1;
+}
+
+// SYS_STAT(106): 파일/디렉터리 정보 조회
+// 유저 공간 struct stat: { uint32_t st_size; uint16_t st_mode; }
+static uint32_t sys_stat(uint32_t path_vaddr, uint32_t stat_vaddr) {
+    const char* path = (const char*)path_vaddr;
+    struct {
+        uint32_t st_size;
+        uint16_t st_mode;
+    }* buf = (void*)stat_vaddr;
+
+    vfs_stat_t vstat;
+    int err = vfs_stat(path, &vstat);
+    if (err != VFS_OK) return (uint32_t)-1;
+
+    buf->st_size = vstat.size;
+    buf->st_mode = (vstat.attr & VFS_ATTR_DIR) ? 0x4000 : 0x8000;
+    return 0;
+}
+
+// SYS_OPENDIR(200): 디렉터리 열기 → FD 반환
+static uint32_t sys_opendir(uint32_t path_vaddr) {
+    const char* path = (const char*)path_vaddr;
+
+    int fd = -1;
+    for (int i = FD_FILE_MIN; i < FD_TABLE_MAX; i++) {
+        if (g_fd_table[i] == NULL) { fd = i; break; }
+    }
+    if (fd < 0) return (uint32_t)-23; // -ENFILE
+
+    vfs_node_t* dirnode = NULL;
+    int err = vfs_opendir(path, &dirnode);
+    if (err != VFS_OK) return (uint32_t)(int32_t)err;
+
+    g_fd_table[fd]  = dirnode;
+    g_fd_is_dir[fd] = 1;
+    return (uint32_t)fd;
+}
+
+// SYS_READDIR(201): 다음 디렉터리 엔트리 읽기
+// 유저 공간 struct dirent: { char d_name[256]; uint32_t d_size; uint8_t d_type; }
+static uint32_t sys_readdir(uint32_t fd, uint32_t dirent_vaddr) {
+    if (fd < FD_FILE_MIN || fd >= FD_TABLE_MAX ||
+        g_fd_table[fd] == NULL || !g_fd_is_dir[fd]) {
+        return (uint32_t)-9; // -EBADF
+    }
+
+    struct {
+        char     d_name[256];
+        uint32_t d_size;
+        uint8_t  d_type;
+    }* ent = (void*)dirent_vaddr;
+
+    vfs_stat_t vstat;
+    int err = vfs_readdir(g_fd_table[fd], &vstat);
+    if (err != VFS_OK) return (uint32_t)-1; // EOF 또는 오류
+
+    /* 엔트리 데이터 복사 */
+    int i;
+    for (i = 0; i < 255 && vstat.name[i]; i++)
+        ent->d_name[i] = vstat.name[i];
+    ent->d_name[i] = '\0';
+    ent->d_size = vstat.size;
+    ent->d_type = (vstat.attr & VFS_ATTR_DIR) ? 2 : 1; /* DT_DIR=2, DT_REG=1 */
+    return 0;
+}
+
+// SYS_CLOSEDIR(202): 디렉터리 FD 닫기
+static uint32_t sys_closedir(uint32_t fd) {
+    if (fd < FD_FILE_MIN || fd >= FD_TABLE_MAX ||
+        g_fd_table[fd] == NULL || !g_fd_is_dir[fd]) {
+        return (uint32_t)-9; // -EBADF
+    }
+    vfs_closedir(g_fd_table[fd]);
+    g_fd_table[fd]  = NULL;
+    g_fd_is_dir[fd] = 0;
+    return 0;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 시스템 콜 디스패처
 // ─────────────────────────────────────────────────────────────────────────────
 uint32_t syscall_dispatch(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (eax) {
-        case SYS_EXIT:   return sys_exit(ebx);
-        case SYS_EXEC:   return sys_exec(ebx, ecx, edx);
-        case SYS_READ:   return sys_read(ebx, ecx, edx);
-        case SYS_WRITE:  return sys_write(ebx, ecx, edx);
-        case SYS_OPEN:   return sys_open(ebx, ecx, edx);
-        case SYS_CLOSE:  return sys_close(ebx);
-        case SYS_LSEEK:  return sys_lseek(ebx, ecx, edx);
-        case SYS_GETPID: return sys_getpid();
-        case SYS_BRK:    return sys_brk(ebx);
-        case SYS_YIELD:  return sys_yield();
+        case SYS_EXIT:    return sys_exit(ebx);
+        case SYS_READ:    return sys_read(ebx, ecx, edx);
+        case SYS_WRITE:   return sys_write(ebx, ecx, edx);
+        case SYS_OPEN:    return sys_open(ebx, ecx, edx);
+        case SYS_CLOSE:   return sys_close(ebx);
+        case SYS_UNLINK:  return sys_unlink(ebx);
+        case SYS_EXEC:    return sys_exec(ebx, ecx, edx);
+        case SYS_LSEEK:   return sys_lseek(ebx, ecx, edx);
+        case SYS_GETPID:  return sys_getpid();
+        case SYS_MKDIR:   return sys_mkdir(ebx, ecx);
+        case SYS_BRK:     return sys_brk(ebx);
+        case SYS_STAT:    return sys_stat(ebx, ecx);
+        case SYS_YIELD:   return sys_yield();
+        case SYS_OPENDIR: return sys_opendir(ebx);
+        case SYS_READDIR: return sys_readdir(ebx, ecx);
+        case SYS_CLOSEDIR:return sys_closedir(ebx);
         default:
             klog_warn("[SYSCALL] Unknown syscall: %d\n", (int)eax);
             return (uint32_t)-38; // -ENOSYS
     }
 }
 
+// SYSENTER 커널 스택 (4KB, 정적 할당)
+static uint8_t sysenter_stack[4096];
+
+// wrmsr 헬퍼: MSR 레지스터에 32비트 값 쓰기
+static inline void wrmsr(uint32_t msr, uint32_t val) {
+    __asm__ volatile ("wrmsr" : : "c"(msr), "a"(val), "d"(0));
+}
+
 // syscall_init은 idt.c에서 int 0x80 핸들러를 등록한 뒤 호출됩니다.
 void syscall_init(void) {
     // FD 테이블 초기화
     for (int i = 0; i < FD_TABLE_MAX; i++) {
-        g_fd_table[i] = NULL;
+        g_fd_table[i]  = NULL;
+        g_fd_is_dir[i] = 0;
     }
-    klog_info("[SYSCALL] System call interface ready (int 0x80)\n");
+
+    // SYSENTER MSR 설정
+    // CS: 커널 코드 세그먼트 (0x08), sysexit 시 유저 CS = 0x08+16 = 0x18|3 = 0x1B
+    wrmsr(MSR_SYSENTER_CS,  0x08);
+    // EIP: sysenter 진입점
+    wrmsr(MSR_SYSENTER_EIP, (uint32_t)sysenter_handler);
+    // ESP: 커널 스택 최상단 (스택은 하향 성장)
+    wrmsr(MSR_SYSENTER_ESP, (uint32_t)(sysenter_stack + sizeof(sysenter_stack)));
+
+    klog_info("[SYSCALL] System call interface ready (int 0x80 + sysenter)\n");
 }

@@ -48,7 +48,15 @@
 #define SYS_LSEEK        19
 #define SYS_GETPID       20
 #define SYS_BRK          45
+#define SYS_STAT         106  // stat (파일 정보)
 #define SYS_YIELD        158  // sched_yield
+
+// ParinOS 확장 시스템 콜
+#define SYS_UNLINK       10   // unlink (파일 삭제)
+#define SYS_MKDIR        39   // mkdir (디렉터리 생성)
+#define SYS_OPENDIR      200  // opendir (디렉터리 열기)
+#define SYS_READDIR      201  // readdir (디렉터리 엔트리 읽기)
+#define SYS_CLOSEDIR     202  // closedir (디렉터리 닫기)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 유저 프로세스 디스크립터
@@ -62,9 +70,19 @@ typedef struct {
 } user_proc_t;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SYSENTER MSR 번호
+// ─────────────────────────────────────────────────────────────────────────────
+#define MSR_SYSENTER_CS  0x174
+#define MSR_SYSENTER_EIP 0x175
+#define MSR_SYSENTER_ESP 0x176
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 시스템 콜 핸들러 등록 (idt.c에서 int 0x80 벡터에 등록)
 // ─────────────────────────────────────────────────────────────────────────────
 void syscall_init(void);
+
+// SYSENTER 진입점 (idt_asm.asm 에서 구현)
+extern void sysenter_handler(void);
 
 /**
  * 시스템 콜 디스패처 (어셈블리 int 0x80 핸들러에서 호출)
