@@ -1,5 +1,5 @@
 /*
- * hello.c — ParinOS Ring 3 데모 프로그램
+ * hello.c - ParinOS Ring 3 데모 프로그램
  *
  * 이 프로그램은 sysenter 시스템 콜을 통해 커널과 통신하며,
  * VFS 기반 파일 읽기, 디렉터리 목록, 프로세스 ID 조회를 시연합니다.

@@ -518,6 +518,10 @@ uint32_t vmm_get_boot_dir_phys(void) {
     return (uint32_t)boot_page_directory;
 }
 
+// USER_PD_ENTRY: PD 엔트리 1 (가상 주소 0x400000-0x7FFFFF) 은 유저 프로그램
+// 로드 영역이므로 프로세스마다 독립 페이지 테이블을 가져야 합니다.
+#define USER_PD_ENTRY 1
+
 uint32_t vmm_clone_kernel_dir(void) {
     // 새 페이지 디렉토리를 위한 물리 페이지 할당
     uint32_t* new_pd = (uint32_t*)pmm_alloc_frame();
@@ -528,10 +532,10 @@ uint32_t vmm_clone_kernel_dir(void) {
     memset(new_pd, 0, PAGE_SIZE);
 
     // boot_page_directory 에서 커널 엔트리를 공유합니다.
-    // PD 엔트리 1 (0x400000-0x7FFFFF) 은 유저 프로그램 영역이므로
+    // PD 엔트리 USER_PD_ENTRY (0x400000-0x7FFFFF) 은 유저 프로그램 영역이므로
     // 프로세스마다 독립된 매핑을 갖도록 공유하지 않습니다.
     for (int i = 0; i < 1024; i++) {
-        if (i == 1) {
+        if (i == USER_PD_ENTRY) {
             new_pd[i] = 0; // 유저 코드/데이터 영역은 각 프로세스가 독립 관리
         } else if (boot_page_directory[i] & PAGE_PRESENT) {
             new_pd[i] = boot_page_directory[i]; // 커널 페이지 테이블 공유

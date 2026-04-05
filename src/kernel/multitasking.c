@@ -19,7 +19,8 @@
 // SYSENTER ESP MSR (유저 스레드 전환 시 갱신)
 #define MSR_SYSENTER_ESP 0x176
 
-static inline void wrmsr_mt(uint32_t msr, uint32_t val) {
+/* wrmsr 래퍼 — multitasking.c 내부 전용 */
+static inline void write_msr(uint32_t msr, uint32_t val) {
     __asm__ volatile("wrmsr" : : "c"(msr), "a"(val), "d"(0));
 }
 
@@ -477,7 +478,7 @@ uint32_t scheduler_tick(uint32_t current_esp) {
     if (threads[next].stack != NULL) {
         uint32_t kstack_top = (uint32_t)(threads[next].stack + threads[next].stack_size);
         tss_set_kernel_stack(kstack_top);
-        wrmsr_mt(MSR_SYSENTER_ESP, kstack_top);
+        write_msr(MSR_SYSENTER_ESP, kstack_top);
     }
 
     // 12. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환

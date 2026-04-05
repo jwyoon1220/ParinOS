@@ -183,6 +183,9 @@ enter_ring3(uint32_t entry_point, uint32_t user_esp) {
  * @param argc       인수 개수
  * @param argv       인수 문자열 배열
  * ─────────────────────────────────────────────────────────────────────────────*/
+
+/* elf_execute_in_ring3 에서 지원하는 최대 인수 개수 */
+#define ELF_MAX_ARGC 32
 void __attribute__((noreturn))
 elf_execute_in_ring3(const char* filepath, int argc, const char **argv) {
     /* 1. 유저 페이지 디렉토리 생성 */
@@ -247,8 +250,8 @@ elf_execute_in_ring3(const char* filepath, int argc, const char **argv) {
     uint32_t user_sp = USER_STACK_TOP;
 
     /* argv 문자열을 스택 상단에 복사 */
-    char* arg_ptrs[32];
-    int n = (argc > 31) ? 31 : argc;
+    char* arg_ptrs[ELF_MAX_ARGC];
+    int n = (argc > ELF_MAX_ARGC - 1) ? ELF_MAX_ARGC - 1 : argc;
 
     for (int i = n - 1; i >= 0; i--) {
         const char* s = argv[i] ? argv[i] : "";
