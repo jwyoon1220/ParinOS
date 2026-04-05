@@ -6,9 +6,13 @@
 #include "../hal/vga.h"
 #include "../std/kstd.h"
 #include "../mem/mem.h"
-#include "../mem/vmm.h" // 🌟 VMM 연동
+#include "../mem/vmm.h"
+#include "../mem/pmm.h"
 #include "../kernel/kernel_status_manager.h"
+#include "../kernel/multitasking.h"
+#include "../kernel/tss.h"
 #include "../fs/fs.h"
+#include "../user/user.h"
 
 bool elf_check_supported(Elf32_Ehdr *hdr) {
     if (hdr->e_ident[0] != 0x7f || hdr->e_ident[1] != 'E' ||
@@ -34,18 +38,17 @@ void* elf_load_file(File *file) {
 
         if (phdr.p_type == PT_LOAD) {
 
-            // 🌟 [핵심] VMM을 이용한 가상 메모리 할당
-            // 세그먼트가 위치할 시작 페이지와 끝 페이지를 4KB(PAGE_SIZE) 단위로 정렬합니다.
+            // VMM을 이용한 가상 메모리 할당
             uint32_t start_page = phdr.p_vaddr & PAGE_MASK;
             uint32_t end_page = (phdr.p_vaddr + phdr.p_memsz + PAGE_SIZE - 1) & PAGE_MASK;
             uint32_t page_count = (end_page - start_page) / PAGE_SIZE;
 
-            // 할당할 페이지가 있다면 VMM에 요청 (현재는 커널 모드 테스트이므로 VMM_ALLOC_KERNEL 사용)
+            // 유저 플래그로 페이지 할당 (PAGE_USER: Ring 3 에서 접근 가능)
             if (page_count > 0) {
-                vmm_result_t alloc_result = vmm_alloc_virtual_pages(start_page, page_count, VMM_ALLOC_KERNEL);
+                vmm_result_t alloc_result = vmm_alloc_virtual_pages(start_page, page_count, VMM_ALLOC_USER);
                 if (alloc_result != VMM_SUCCESS && alloc_result != VMM_ERROR_ALREADY_MAPPED) {
                     kprintf("VMM Allocation failed for ELF segment!\n");
-                    return 0; // 메모리 할당 실패 시 중단
+                    return 0;
                 }
             }
 
@@ -98,18 +101,7 @@ int elf_execute_from_path(const char* filepath) {
 
 /*
  * elf_execute_with_args — argc/argv 를 스택에 올려 ELF 프로그램에 전달합니다.
- *
- * x86 C 호출 규약에서 main(int argc, char **argv) 을 실행하려면
- * 스택 레이아웃이 아래와 같아야 합니다 (높은 주소 → 낮은 주소):
- *   [argv[n-1] 문자열] ... [argv[0] 문자열]  ← 문자열 데이터
- *   [NULL]              ← argv 종결자
- *   [argv[n-1] 포인터]
- *   ...
- *   [argv[0] 포인터]    ← argv 배열
- *   [&argv[0]]          ← argv 인수
- *   [argc]              ← argc 인수
- *   [dummy return addr] ← 반환 주소 자리 (0)
- *   ← ESP
+ * (커널 모드(Ring 0)에서 직접 실행 — sys_exec 내부 용)
  */
 int elf_execute_with_args(const char* filepath, int argc, const char **argv) {
     File file;
@@ -129,8 +121,6 @@ int elf_execute_with_args(const char* filepath, int argc, const char **argv) {
 
     kprintf("Executing ELF program at 0x%x (argc=%d)...\n", (uint32_t)ep, argc);
 
-    /* argv 문자열을 스택에 복사하고 포인터 배열을 구성합니다.
-     * 임시 스택 공간을 동적 할당으로 구성합니다. */
     typedef int (*main_fn_t)(int, const char **);
     main_fn_t entry = (main_fn_t)ep;
 
@@ -138,4 +128,176 @@ int elf_execute_with_args(const char* filepath, int argc, const char **argv) {
 
     kprintf("Program exited with code %d\n", ret);
     return RUN_SUCCESS;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * enter_ring3 — iret 을 사용하여 Ring 0 → Ring 3 전환을 수행합니다.
+ *
+ * iret 스택 레이아웃 (특권 레벨 변경 시):
+ *   [SS]     ← 유저 데이터 세그먼트 (0x23 = 0x20 | RPL3)
+ *   [ESP]    ← 유저 스택 포인터
+ *   [EFLAGS] ← 인터럽트 허용(IF) 플래그 포함
+ *   [CS]     ← 유저 코드 세그먼트 (0x1B = 0x18 | RPL3)
+ *   [EIP]    ← 유저 진입점
+ *
+ * 이 함수는 절대 반환하지 않습니다.
+ * ─────────────────────────────────────────────────────────────────────────────*/
+static void __attribute__((noreturn))
+enter_ring3(uint32_t entry_point, uint32_t user_esp) {
+    __asm__ volatile (
+        "cli\n\t"
+        /* 유저 데이터 세그먼트로 DS/ES/FS/GS 전환 */
+        "mov $0x23, %%ax\n\t"
+        "mov %%ax, %%ds\n\t"
+        "mov %%ax, %%es\n\t"
+        "mov %%ax, %%fs\n\t"
+        "mov %%ax, %%gs\n\t"
+        /* iret 프레임 구성: SS, ESP, EFLAGS, CS, EIP */
+        "push $0x23\n\t"          /* SS:  유저 데이터 선택자 */
+        "push %1\n\t"             /* ESP: 유저 스택 포인터  */
+        "pushf\n\t"
+        "pop %%eax\n\t"
+        "or $0x200, %%eax\n\t"   /* IF=1: 인터럽트 허용    */
+        "push %%eax\n\t"          /* EFLAGS                  */
+        "push $0x1B\n\t"          /* CS:  유저 코드 선택자   */
+        "push %0\n\t"             /* EIP: 유저 진입점        */
+        "iret\n\t"
+        : : "r"(entry_point), "r"(user_esp) : "eax", "memory"
+    );
+    __builtin_unreachable();
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * elf_execute_in_ring3 — ELF 파일을 유저 주소 공간에 로드하고 Ring 3로 진입합니다.
+ *
+ * 동작 순서:
+ *  1) 유저 프로세스용 페이지 디렉토리 생성 (커널 매핑 공유)
+ *  2) 새 페이지 디렉토리로 CR3 전환
+ *  3) ELF PT_LOAD 세그먼트를 PAGE_USER 플래그로 매핑
+ *  4) 유저 스택(USER_STACK_TOP) PAGE_USER 플래그로 할당
+ *  5) argc/argv 를 유저 스택에 배치
+ *  6) TSS.esp0 를 현재 커널 스택 최상단으로 설정
+ *  7) iret 으로 Ring 3 진입 (절대 반환하지 않음)
+ *
+ * @param filepath   ELF 파일 경로
+ * @param argc       인수 개수
+ * @param argv       인수 문자열 배열
+ * ─────────────────────────────────────────────────────────────────────────────*/
+
+/* elf_execute_in_ring3 에서 지원하는 최대 인수 개수 */
+#define ELF_MAX_ARGC 32
+void __attribute__((noreturn))
+elf_execute_in_ring3(const char* filepath, int argc, const char **argv) {
+    /* 1. 유저 페이지 디렉토리 생성 */
+    uint32_t user_pd = vmm_clone_kernel_dir();
+    if (user_pd == 0) {
+        kprintf("[ELF] 유저 페이지 디렉토리 생성 실패\n");
+        kthread_exit();
+        __builtin_unreachable();
+    }
+
+    /* 2. 유저 페이지 디렉토리로 CR3 전환
+     *    이후 모든 vmm_alloc_virtual_pages 는 이 PD 에 반영됨 */
+    vmm_switch_page_dir(user_pd);
+
+    /* 현재 스레드 CR3 등록 (스케줄러가 전환 시 복원할 수 있도록) */
+    kthread_set_cr3(kthread_id(), user_pd);
+
+    /* 3. ELF 로드 (elf_load_file 이 VMM_ALLOC_USER 로 세그먼트 매핑) */
+    File file;
+    if (fat_file_open(&file, filepath, FAT_READ) != FAT_ERR_NONE) {
+        kprintf("[ELF] 파일 열기 실패: %s\n", filepath);
+        vmm_switch_page_dir(vmm_get_boot_dir_phys());
+        kthread_exit();
+        __builtin_unreachable();
+    }
+
+    void* entry_ptr = elf_load_file(&file);
+    fat_file_close(&file);
+
+    if (entry_ptr == 0) {
+        kprintf("[ELF] ELF 로드 실패: %s\n", filepath);
+        vmm_switch_page_dir(vmm_get_boot_dir_phys());
+        kthread_exit();
+        __builtin_unreachable();
+    }
+
+    uint32_t entry_point = (uint32_t)entry_ptr;
+    kprintf("[ELF] 유저 프로세스 로드 완료: entry=0x%x\n", entry_point);
+
+    /* 4. 유저 스택 할당 (USER_STACK_TOP 기준 하향 성장, PAGE_USER) */
+    uint32_t stack_pages = USER_STACK_SIZE / PAGE_SIZE;
+    uint32_t stack_base  = USER_STACK_TOP - USER_STACK_SIZE;
+
+    if (vmm_alloc_virtual_pages(stack_base, stack_pages, VMM_ALLOC_USER) != VMM_SUCCESS) {
+        kprintf("[ELF] 유저 스택 할당 실패\n");
+        vmm_switch_page_dir(vmm_get_boot_dir_phys());
+        kthread_exit();
+        __builtin_unreachable();
+    }
+
+    /* 5. argc/argv 를 유저 스택에 배치
+     *
+     *  유저 스택 레이아웃 (높은 주소 → 낮은 주소, cdecl main 호환):
+     *    argv[n-1] 문자열 ... argv[0] 문자열  ← 문자열 데이터
+     *    NULL                                  ← argv 배열 종결자
+     *    ptr_to_argv[n-1] ... ptr_to_argv[0]  ← argv 포인터 배열
+     *    &argv[0]                              ← main 의 argv 인수
+     *    argc                                  ← main 의 argc 인수
+     *    0                                     ← 더미 반환 주소
+     *    ← ESP
+     */
+    uint32_t user_sp = USER_STACK_TOP;
+
+    /* argv 문자열을 스택 상단에 복사 */
+    char* arg_ptrs[ELF_MAX_ARGC];
+    int n = (argc > ELF_MAX_ARGC - 1) ? ELF_MAX_ARGC - 1 : argc;
+
+    for (int i = n - 1; i >= 0; i--) {
+        const char* s = argv[i] ? argv[i] : "";
+        uint32_t len = 0;
+        while (s[len]) len++;
+        len++; /* NULL 포함 */
+        user_sp -= len;
+        /* 스택은 유저 PD 에 매핑되어 있으므로 직접 접근 가능 */
+        char* dst = (char*)user_sp;
+        for (uint32_t j = 0; j < len; j++) dst[j] = s[j];
+        arg_ptrs[i] = dst;
+    }
+
+    /* 4바이트 정렬 */
+    user_sp &= ~3U;
+
+    /* argv 포인터 배열 (NULL 종결) */
+    user_sp -= sizeof(char*);
+    *(char**)user_sp = (char*)0;
+    for (int i = n - 1; i >= 0; i--) {
+        user_sp -= sizeof(char*);
+        *(char**)user_sp = arg_ptrs[i];
+    }
+
+    char** argv_ptr = (char**)user_sp;
+
+    /* main 인수: argv, argc, 더미 반환 주소 */
+    user_sp -= sizeof(char**);
+    *(char***)user_sp = argv_ptr;
+
+    user_sp -= sizeof(int);
+    *(int*)user_sp = n;
+
+    user_sp -= sizeof(uint32_t);
+    *(uint32_t*)user_sp = 0; /* 더미 반환 주소 */
+
+    /* 6. TSS.esp0 를 현재 커널 스택 최상단으로 설정
+     *    Ring 3 → Ring 0 전환(인터럽트/시스콜) 시 CPU 가 이 스택을 사용함 */
+    kthread_t* cur = kthread_current();
+    if (cur && cur->stack) {
+        uint32_t kstack_top = (uint32_t)(cur->stack + cur->stack_size);
+        tss_set_kernel_stack(kstack_top);
+    }
+
+    kprintf("[ELF] Ring 3 진입: entry=0x%x esp=0x%x\n", entry_point, user_sp);
+
+    /* 7. iret 으로 Ring 3 진입 */
+    enter_ring3(entry_point, user_sp);
 }

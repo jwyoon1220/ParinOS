@@ -70,11 +70,25 @@ int elf_execute_from_path(const char* filepath);
 
 /**
  * ELF 파일을 경로에서 로드하고 argc/argv 를 전달하며 실행합니다.
+ * 커널 모드(Ring 0)에서 직접 실행합니다. sys_exec 내부에서 사용합니다.
  * @param filepath  실행할 ELF 파일 경로
  * @param argc      인수 개수 (프로그램 이름 포함)
  * @param argv      인수 문자열 배열
  * @return RUN_SUCCESS(0) 또는 RUN_FAILURE(음수)
  */
 int elf_execute_with_args(const char* filepath, int argc, const char **argv);
+
+/**
+ * ELF 파일을 유저 주소 공간(Ring 3)에 로드하고 iret 으로 진입합니다.
+ *
+ * 새 페이지 디렉토리를 생성하고, ELF 세그먼트를 PAGE_USER 플래그로 매핑한 뒤,
+ * 유저 스택을 설정하고 Ring 3 으로 전환합니다. 이 함수는 절대 반환하지 않습니다.
+ *
+ * @param filepath  실행할 ELF 파일 경로
+ * @param argc      인수 개수
+ * @param argv      인수 문자열 배열
+ */
+void __attribute__((noreturn))
+elf_execute_in_ring3(const char* filepath, int argc, const char **argv);
 
 #endif

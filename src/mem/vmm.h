@@ -96,6 +96,25 @@ int vmm_is_mapped(uint32_t vaddr);
 int vmm_is_kernel_address(uint32_t vaddr);
 int vmm_is_user_address(uint32_t vaddr);
 
+// 프로세스별 페이지 디렉토리 지원
+/**
+ * 커널 매핑을 공유하는 새 페이지 디렉토리를 생성합니다.
+ * 유저 영역(PD 엔트리 1: 0x400000-0x7FFFFF)은 비워 프로세스 격리를 구현합니다.
+ * @return 새 페이지 디렉토리의 물리 주소 (실패 시 0)
+ */
+uint32_t vmm_clone_kernel_dir(void);
+
+/**
+ * CR3를 새 페이지 디렉토리로 전환합니다.
+ * @param phys_pd  새 페이지 디렉토리의 물리 주소
+ */
+void vmm_switch_page_dir(uint32_t phys_pd);
+
+/**
+ * 부트 페이지 디렉토리의 물리 주소를 반환합니다.
+ */
+uint32_t vmm_get_boot_dir_phys(void);
+
 extern uint32_t* current_page_directory;
 
 #endif //PARINOS_VMM_H

@@ -21,13 +21,18 @@
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
-/* 유저 셸 실행: /bin/shell 을 실행하고 실패 시 커널 셸로 폴백합니다. */
-static void launch_shell(void) {
+/* 유저 셸 실행: 별도 스레드에서 Ring 3 로 /bin/shell 을 실행합니다.
+ * 실패 시 커널 내장 셸로 폴백합니다. */
+static void user_shell_thread(void) {
     const char *argv[] = { "/bin/shell", (const char*)0 };
-    int ret = elf_execute_with_args("/bin/shell", 1, argv);
-    if (ret != 0) {
-        /* /bin/shell 실행 실패 → 커널 내장 셸로 폴백 */
-        klog_warn("[kernel] /bin/shell 실행 실패 (ret=%d), 커널 셸로 폴백합니다.\n", ret);
+    elf_execute_in_ring3("/bin/shell", 1, argv);
+    /* 절대 여기에 도달하지 않음 — elf_execute_in_ring3 는 noreturn */
+}
+
+static void launch_shell(void) {
+    int tid = kcreate_thread("shell", user_shell_thread, 32768);
+    if (tid < 0) {
+        klog_warn("[kernel] /bin/shell 스레드 생성 실패, 커널 셸로 폴백합니다.\n");
         shell_init();
     }
 }

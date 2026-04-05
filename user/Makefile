@@ -34,7 +34,7 @@ LIB_OBJS := $(patsubst $(LIB_DIR)/%.c, $(BUILD)/lib/%.o, $(LIB_SRCS))
 LIB_OBJS += $(BUILD)/lib/syscall.o
 
 # ── 프로그램 목록 ────────────────────────────────────────────────────────
-PROGS := shell cat echo ls mkdir rm cp
+PROGS := shell cat echo ls mkdir rm cp hello
 
 # ── 기본 타겟 ────────────────────────────────────────────────────────────
 .PHONY: all clean lib $(PROGS)
