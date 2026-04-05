@@ -67,24 +67,53 @@
 
 ---
 
-## 📅 향후 로드맵 (Upcoming Tasks)
+## 📅 로드맵 현황 (Roadmap Status)
 
-### 1단계: 사용자 모드 (User Mode)
-- [ ] **링 3(Ring 3) 진입**: GDT에 Ring 3 코드/데이터 디스크립터 추가 및 `iret`을 통한 사용자 모드 전환.
-- [ ] **System Call**: 소프트웨어 인터럽트(`int 0x80`)를 통한 사용자 프로그램의 커널 기능 호출.
-- [ ] **프로세스 격리**: 사용자 프로세스 간 메모리 보호 및 Ring 0/Ring 3 권한 분리.
+### ✅ 1단계: 사용자 모드 (User Mode) — **완료**
+- [x] **GDT Ring 3 디스크립터**: 유저 코드(`0x1B`)/데이터(`0x23`) 세그먼트 추가, TSS 디스크립터(`0x28`) 등록 및 `ltr` 실행.
+- [x] **TSS (Task State Segment)**: `tss_init` / `tss_set_kernel_stack` 구현. 스케줄러 전환 시마다 `TSS.esp0` 갱신.
+- [x] **Ring 3 진입(iret)**: `elf_execute_in_ring3()` — 새 페이지 디렉토리 생성, ELF 세그먼트를 PAGE_USER 로 매핑, 유저 스택 구성 후 `iret`으로 Ring 3 전환.
+- [x] **System Call (sysenter + int 0x80)**: 두 ABI 모두 지원. 유저 프로그램은 `sysenter` 사용(user/lib/syscall.asm).
+- [x] **syscall_dispatch**: SYS_EXIT, SYS_EXEC, SYS_READ, SYS_WRITE, SYS_OPEN, SYS_CLOSE, SYS_LSEEK, SYS_GETPID, SYS_YIELD, SYS_UNLINK, SYS_MKDIR, SYS_OPENDIR, SYS_READDIR, SYS_CLOSEDIR 구현.
+- [x] **프로세스 격리**: 프로세스별 독립 페이지 디렉토리(CR3) 생성. 스케줄러 전환 시 CR3 + MSR_SYSENTER_ESP 갱신.
+- [x] **유저 스페이스 폴트 처리**: 유저 모드 페이지 폴트 시 커널 패닉 대신 프로세스 종료.
 
-### 2단계: 파일 시스템 추상화
-- [ ] **VFS(Virtual File System) 추상화**: 하드디스크, 램디스크 등 서로 다른 저장 매체를 `open()`, `read()`, `write()` 같은 통일된 인터페이스로 접근하도록 설계.
+### ✅ 2단계: 파일 시스템 추상화 (VFS) — **완료**
+- [x] **VFS 추상화 계층**: `vfs_open / vfs_read / vfs_write / vfs_close` 통일 인터페이스.
+- [x] **FAT32 → VFS 어댑터**: `vfs_fat.c` — 기존 FAT32 드라이버를 VFS 노드로 래핑.
+- [x] **syscall → VFS 연동**: `sys_open/read/write/close/lseek/unlink/mkdir` 가 VFS를 통해 FAT32로 라우팅.
 
-### 3단계: 스케줄링 고도화
+### 🚧 3단계: 스케줄링 고도화 (진행 예정)
 - [ ] **우선순위 스케줄링**: 현재 Round-Robin에 우선순위 기반 스케줄링 추가.
-- [ ] **IPC (Inter-Process Communication)**: 프로세스 간 통신 메커니즘 (파이프 등) 구현.
+- [ ] **IPC (Inter-Process Communication)**: 파이프, 공유 메모리 등.
+- [ ] **fork**: 프로세스 복제 (현재는 exec 중심 모델).
+
+---
+
+## 🧪 테스트 (Manual QEMU Test)
+
+```bash
+# 빌드
+make all
+
+# QEMU 실행
+make run
+```
+
+부팅 후 Ring 3 유저 셸이 자동 실행됩니다. 셸에서 다음 명령을 시도하세요:
+
+```sh
+ls                  # 루트 디렉터리 목록 (VFS → FAT32)
+cat /readme.txt     # 파일 읽기
+hello               # Ring 3 데모 프로그램 (VFS 시스콜 데모)
+echo test > /t.txt  # 파일 쓰기
+mkdir /testdir      # 디렉터리 생성
+```
 
 ---
 
 ## 개발 환경
-- **C17**
-- **i686-linux-gnu-gcc** / **i686-linux-gnu-ld**
+- **C17** / **C++17**
+- **i686-linux-gnu-gcc** / **i686-linux-gnu-ld** / **i686-linux-gnu-g++**
 - **NASM** (https://nasm.us)
 - **QEMU** (에뮬레이터, `make run`으로 실행)

@@ -8,6 +8,7 @@
 #include "../hal/vga.h"
 #include "../std/kstring.h"
 #include "../kernel/kernel_status_manager.h"
+#include "../kernel/multitasking.h"
 #include "../hal/hal.h"
 
 // 전역 변수
@@ -509,7 +510,44 @@ void init_vmm(void) {
 }
 
 // =============================================================================
-// 페이지 폴트 핸들러 (기존과 동일)
+// 프로세스별 페이지 디렉토리 지원
+// =============================================================================
+
+uint32_t vmm_get_boot_dir_phys(void) {
+    // identity mapping 이므로 물리 주소 = 가상 주소
+    return (uint32_t)boot_page_directory;
+}
+
+uint32_t vmm_clone_kernel_dir(void) {
+    // 새 페이지 디렉토리를 위한 물리 페이지 할당
+    uint32_t* new_pd = (uint32_t*)pmm_alloc_frame();
+    if (!new_pd) {
+        kprintf("[VMM] vmm_clone_kernel_dir: OOM\n");
+        return 0;
+    }
+    memset(new_pd, 0, PAGE_SIZE);
+
+    // boot_page_directory 에서 커널 엔트리를 공유합니다.
+    // PD 엔트리 1 (0x400000-0x7FFFFF) 은 유저 프로그램 영역이므로
+    // 프로세스마다 독립된 매핑을 갖도록 공유하지 않습니다.
+    for (int i = 0; i < 1024; i++) {
+        if (i == 1) {
+            new_pd[i] = 0; // 유저 코드/데이터 영역은 각 프로세스가 독립 관리
+        } else if (boot_page_directory[i] & PAGE_PRESENT) {
+            new_pd[i] = boot_page_directory[i]; // 커널 페이지 테이블 공유
+        }
+    }
+
+    return (uint32_t)new_pd;
+}
+
+void vmm_switch_page_dir(uint32_t phys_pd) {
+    current_page_directory = (uint32_t*)phys_pd;
+    __asm__ volatile("mov %0, %%cr3" : : "r"(phys_pd) : "memory");
+}
+
+// =============================================================================
+// 페이지 폴트 핸들러
 // =============================================================================
 
 void page_fault_handler(uint32_t error_code) {
@@ -519,37 +557,49 @@ void page_fault_handler(uint32_t error_code) {
     vmm_statistics.page_fault_count++;
 
     // 에러 코드 분석
-    int present = !(error_code & 0x1);
+    int present = !(error_code & 0x1);   // 1=페이지 없음, 0=보호 위반
     int write_fault = error_code & 0x2;
-    int user_fault = error_code & 0x4;
+    int user_fault = error_code & 0x4;   // Ring 3 에서 발생한 폴트
 
-    kprintf("[VMM] Page fault at %x (error: %x)\n", fault_address, error_code);
-    kprintf("[VMM] %s, %s, %s\n",
-           present ? "page not present" : "protection violation",
-           write_fault ? "write" : "read",
-           user_fault ? "user mode" : "kernel mode");
+    kprintf("[VMM] Page fault at 0x%x (error=0x%x, %s, %s, %s)\n",
+            fault_address, error_code,
+            present ? "not-present" : "prot-violation",
+            write_fault ? "write" : "read",
+            user_fault ? "user" : "kernel");
 
-    // 1. 커널 힙 영역에서의 동적 할당
-    if (present && fault_address >= KERNEL_HEAP_BASE && fault_address < KERNEL_VIRTUAL_BASE) {
+    // 1. 커널 힙 영역 동적 할당 (커널 모드 폴트만 처리)
+    if (present && !user_fault &&
+        fault_address >= KERNEL_HEAP_BASE && fault_address < KERNEL_VIRTUAL_BASE) {
         uint32_t page_addr = fault_address & PAGE_MASK;
 
         void* pframe = pmm_alloc_frame();
         if (pframe) {
             vmm_result_t result = vmm_map_page(page_addr, (uint32_t)pframe, PAGE_FLAGS_KERNEL);
             if (result == VMM_SUCCESS) {
-                //kprintf("[VMM] Dynamically allocated page at %x\n", page_addr);
                 return; // 성공적으로 처리됨
             }
             pmm_free_frame(pframe);
         }
-
         kprintf("[VMM] Failed to allocate page for heap\n");
     }
 
-    // 2. 스택 확장 (필요한 경우)
-    // TODO: 스택 영역 처리
+    // 2. 유저 모드 폴트: 프로세스 강제 종료 (커널 패닉 방지)
+    if (user_fault) {
+        kprintf("[VMM] User process page fault — terminating process\n");
+        // 커널 세그먼트 복원 후 프로세스 종료
+        __asm__ volatile(
+            "mov $0x10, %%ax\n\t"
+            "mov %%ax, %%ds\n\t"
+            "mov %%ax, %%es\n\t"
+            "mov %%ax, %%fs\n\t"
+            "mov %%ax, %%gs\n\t"
+            : : : "eax"
+        );
+        kprocess_exit();
+        return;
+    }
 
-    // 3. 복구할 수 없는 오류
+    // 3. 복구할 수 없는 커널 오류
     char reason[64];
     if (present) {
         strcpy(reason, "PAGE NOT PRESENT");

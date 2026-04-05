@@ -3,7 +3,7 @@
 //
 // ParinOS 커널 멀티태스킹 구현
 // ─ 선점형 라운드 로빈 스케줄러 (타이머 IRQ0 기반)
-// ─ 커널 모드(Ring 0) 전용 스레드 / 프로세스
+// ─ 커널/유저 모드 스레드 지원 (Ring 0 / Ring 3)
 //
 
 #include "multitasking.h"
@@ -13,6 +13,15 @@
 #include "../hal/io.h"
 #include "../drivers/timer.h"
 #include "../mem/mem.h"
+#include "../mem/vmm.h"
+#include "tss.h"
+
+// SYSENTER ESP MSR (유저 스레드 전환 시 갱신)
+#define MSR_SYSENTER_ESP 0x176
+
+static inline void wrmsr_mt(uint32_t msr, uint32_t val) {
+    __asm__ volatile("wrmsr" : : "c"(msr), "a"(val), "d"(0));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  내부 전역 변수
@@ -450,8 +459,37 @@ uint32_t scheduler_tick(uint32_t current_esp) {
     current_tid = next;
     current_pid = threads[current_tid].pid;
 
-    // 10. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
+    // 10. 페이지 디렉토리(CR3) 전환
+    //     cr3 == 0 이면 부트(커널) 페이지 디렉토리 사용
+    {
+        uint32_t next_cr3 = threads[next].cr3;
+        if (next_cr3 == 0) next_cr3 = vmm_get_boot_dir_phys();
+
+        uint32_t cur_cr3;
+        __asm__ volatile("mov %%cr3, %0" : "=r"(cur_cr3));
+        if (cur_cr3 != next_cr3) {
+            vmm_switch_page_dir(next_cr3);
+        }
+    }
+
+    // 11. TSS.esp0 와 SYSENTER MSR 를 새 스레드의 커널 스택 최상단으로 갱신
+    //     유저 스레드에서 인터럽트/시스콜 발생 시 이 스택으로 전환됨
+    if (threads[next].stack != NULL) {
+        uint32_t kstack_top = (uint32_t)(threads[next].stack + threads[next].stack_size);
+        tss_set_kernel_stack(kstack_top);
+        wrmsr_mt(MSR_SYSENTER_ESP, kstack_top);
+    }
+
+    // 12. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
     return threads[current_tid].esp;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  kthread_set_cr3
+// ─────────────────────────────────────────────────────────────────────────────
+void kthread_set_cr3(int tid, uint32_t cr3) {
+    if (tid < 0 || tid >= KTHREAD_MAX) return;
+    threads[tid].cr3 = cr3;
 }
 
 void dump_multitasking_info(void) {

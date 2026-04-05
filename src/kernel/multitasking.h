@@ -47,9 +47,10 @@ typedef struct {
     char            name[32];         // 스레드 이름 (디버깅용)
     kthread_state_t state;            // 현재 상태
     uint32_t        esp;              // 저장된 스택 포인터 (컨텍스트 전환 시)
-    uint8_t*        stack;            // 스택 기저 주소 (kmalloc으로 할당)
-    uint32_t        stack_size;       // 스택 크기
+    uint8_t*        stack;            // 커널 스택 기저 주소 (kmalloc으로 할당)
+    uint32_t        stack_size;       // 커널 스택 크기
     uint32_t        sleep_until_tick; // 이 틱 이후에 깨어남 (SLEEPING 상태 전용)
+    uint32_t        cr3;              // 페이지 디렉토리 물리 주소 (0 = 부트 PD 사용)
 } kthread_t;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +178,15 @@ int runAsync_named(const char* name, void (*func)(void));
  * Java: Thread.yield()
  */
 void kschedule(void);
+
+/**
+ * 스레드의 페이지 디렉토리(CR3)를 설정합니다.
+ * elf_execute_in_ring3() 등에서 유저 프로세스 PD를 등록할 때 사용합니다.
+ *
+ * @param tid  대상 스레드 ID
+ * @param cr3  페이지 디렉토리 물리 주소 (0 = 커널 부트 PD)
+ */
+void kthread_set_cr3(int tid, uint32_t cr3);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  어셈블리(IRQ0 핸들러)에서 호출되는 내부 함수
