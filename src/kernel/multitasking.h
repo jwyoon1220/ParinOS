@@ -16,6 +16,28 @@
 #define DEFAULT_STACK_SIZE      8192 // 기본 스레드 스택 크기 (8KB)
 #define MAX_THREADS_PER_PROCESS    8  // 프로세스당 최대 스레드 수
 #define IRQ0_INT_NUM              32  // PIT 타이머 인터럽트 번호 (IRQ0 → IDT 32번)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  프로세스 정리 풀 (process cleanup pool)
+//
+//  문제: kthread_exit() / kprocess_exit() 는 현재 자신의 스택 위에서 실행
+//  중이므로 즉시 스택을 해제할 수 없다.
+//
+//  해결: 해제해야 할 스택 포인터와 스레드 ID를 이 풀에 추가해두고,
+//        scheduler_tick() 에서 컨텍스트 전환 완료 후 안전하게 해제한다.
+//        해제를 요청한 스레드(old_tid)의 스택은 타이머 IRQ 스택 프레임이
+//        아직 올라와 있으므로 다음 틱에서만 해제한다.
+// ─────────────────────────────────────────────────────────────────────────────
+#define CLEANUP_POOL_MAX  KTHREAD_MAX  // 정리 풀 최대 항목 수
+
+/**
+ * 좀비 스레드의 스택 해제 요청을 담는 엔트리.
+ * scheduler_tick() 이 cleanup_dead_threads() 를 호출할 때 처리된다.
+ */
+typedef struct {
+    uint8_t  *stack; // 해제할 스택 포인터 (NULL 이면 빈 슬롯)
+    uint32_t  tid;   // 스레드 슬롯 ID (해제 후 KTHREAD_UNUSED 로 리셋)
+} process_cleanup_entry_t;
 // kthread_sleep / sleep 은 timer 를 1000Hz (1ms/tick)로 초기화한 경우에 정확합니다.
 
 // ─────────────────────────────────────────────────────────────────────────────
