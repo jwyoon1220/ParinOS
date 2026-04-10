@@ -8,12 +8,12 @@
 #include "drivers/pci.h"
 #include "drivers/ahci.h"
 #include "std/malloc.h"
-#include "shell/shell.h"
 #include "mem/vmm.h"
 #include "storge/ahci_adaptor.h"
 #include "fs/fs.h"
 #include "kernel/multitasking.h"
 #include "kernel/fpu.h"
+#include "kernel/kernel_status_manager.h"
 #include "drivers/vesa.h"
 #include "font/font.h"
 #include "elf/elf.h"
@@ -21,19 +21,17 @@
 
 #define megaOf(x) ((x) * 1024 * 1024)
 
-/* 유저 셸 실행: 별도 스레드에서 Ring 3 로 /bin/shell 을 실행합니다.
- * 실패 시 커널 내장 셸로 폴백합니다. */
+/* 유저 셸 실행: 별도 스레드에서 Ring 3 로 /bin/shell 을 실행합니다. */
 static void user_shell_thread(void) {
     const char *argv[] = { "/bin/shell", (const char*)0 };
     elf_execute_in_ring3("/bin/shell", 1, argv);
-    /* 절대 여기에 도달하지 않음 — elf_execute_in_ring3 는 noreturn */
+    /* elf_execute_in_ring3 는 noreturn — 절대 여기에 도달하지 않음 */
 }
 
 static void launch_shell(void) {
     int tid = kcreate_thread("shell", user_shell_thread, 32768);
     if (tid < 0) {
-        klog_warn("[kernel] /bin/shell 스레드 생성 실패, 커널 셸로 폴백합니다.\n");
-        shell_init();
+        kernel_panic("/bin/shell 스레드 생성 실패 — 유저 셸을 시작할 수 없습니다", (uint32_t)tid);
     }
 }
 
@@ -90,7 +88,7 @@ void kmain() {
 
     // === 7단계: 사용자 인터페이스 ===
     init_keyboard();          // 키보드 드라이버
-    launch_shell();           // 유저 셸 실행 (실패 시 커널 셸 폴백)
+    launch_shell();           // 유저 셸 실행 (/bin/shell, Ring 3)
 
     while(1) {
         __asm__ __volatile__("hlt");

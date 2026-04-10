@@ -19,11 +19,13 @@
 ### 3. 메모리 관리 시스템 (Memory Management)
 - **PMM (Physical Memory Manager)**: 비트맵 기반 물리 프레임 할당자 구현.
 - **VMM (Virtual Memory Manager)**: 페이징(Paging) 기법을 통한 32비트 4GB 가상 주소 공간 매핑, 페이지 폴트 자동 처리.
-- **Advanced Heap Allocator (kmalloc)**:
-    - **이중 연결 리스트(Doubly Linked List)** 구조 채택.
-    - **First-Fit** 알고리즘 및 **블록 분할(Splitting)** 구현.
-    - **즉각적 병합(Immediate Coalescing)** 로직을 통해 $O(1)$ 속도로 파편화 방지.
-    - 힙 부족 시 자동 페이지 확장 로직 포함.
+- **TLSF 힙 할당자 (kmalloc)** — *O(1) Two-Level Segregated Fit*:
+    - `malloc` / `free` / `realloc` 모두 **최악의 경우 O(1)** 시간 복잡도 보장.
+    - 두 단계 비트맵(FL·SL)으로 적합 블록을 단일 비트 스캔(`bsr`/`bsf`)으로 탐색.
+    - 물리·가상 인접 블록 즉각 병합(coalescing)으로 단편화 억제.
+    - 힙 부족 시 PMM/VMM을 통해 4페이지(16 KB) 단위로 자동 확장.
+    - **메모리 누수 제거**: 좀비 스레드 스택을 `process_cleanup_pool` 에 등록,
+      스케줄러가 컨텍스트 전환 직후 안전하게 `kfree()` 처리.
 
 ### 4. 하드웨어 드라이버
 - **CMOS RTC 드라이버**: I/O 포트(0x70, 0x71) 제어 및 BCD 데이터 변환을 통한 실시간 시계 구현.
@@ -39,12 +41,43 @@
     - 파일 읽기/쓰기/탐색 지원.
     - [FAT32를 구현](https://github.com/strawberryhacker/fat32) 해주신 [@strawberryhacker](https://github.com/strawberryhacker)님께 감사드립니다.
 
-### 6. 멀티태스킹 (Multitasking)
+### 6. 멀티태스킹 및 리소스 정리 (Multitasking & Resource Cleanup)
 - **Context Switching**: IRQ0(타이머 인터럽트) 기반 프리엠티브 컨텍스트 스위칭 구현.
 - **Round-Robin 스케줄러**: 10ms 타임 슬라이스 기반 커널 스레드/프로세스 스케줄링 (최대 32 스레드, 16 프로세스).
 - **ELF 로더**: ELF32 실행 파일 파싱, VMM을 통한 세그먼트 로딩 및 실행 지원.
+- **프로세스 정리 풀 (process_cleanup_pool)**:
+    - `kthread_exit()` / `kprocess_exit()` 에서 종료 시 스택 포인터를 정리 풀에 등록.
+    - `scheduler_tick()` 이 컨텍스트 전환 완료 후 `cleanup_dead_threads()` 를 호출,
+      이전 스레드의 스택을 `kfree()` 하고 TCB 슬롯을 `KTHREAD_UNUSED` 로 초기화.
+    - `kprocess_exit()` 는 PCB 슬롯을 즉시 반환, 모든 소속 스레드 스택을 풀에 일괄 등록.
+    - **IRQ 스택 프레임 보호**: 현재 IRQ 가 올라온 스레드(`old_tid`)의 스택은
+      `iret` 이 완료될 때까지 해제를 한 틱 유예하여 스택 손상을 방지.
 
-### 7. 인터랙티브 쉘 (Interactive Shell)
+### 7. 아키텍처 — 유저 모드 셸 + 커널 모드 스케줄러
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Ring 0 (커널)                     │
+│  ┌──────────┐  ┌──────────────────────────────────┐  │
+│  │  kernel  │  │  scheduler_tick() + cleanup pool  │  │
+│  │ (kmain)  │  │  → 컨텍스트 전환 후 좀비 스택 해제  │  │
+│  └────┬─────┘  └──────────────────────────────────┘  │
+│       │ kcreate_thread("shell")                       │
+└───────┼─────────────────────────────────────────────-┘
+        │ iret (Ring 3)
+┌───────▼─────────────────────────────────────────────┐
+│                    Ring 3 (유저)                     │
+│  /bin/shell — 명령어 파싱, 프로그램 실행              │
+│    └─ exec /bin/<program> → 새 프로세스 생성          │
+│         └─ 종료 시 kprocess_exit() → 정리 풀 등록     │
+└─────────────────────────────────────────────────────┘
+```
+
+- **커널 셸 제거**: `kernel.c` 의 `launch_shell()` 에서 커널 셸(`shell_init()`) 폴백 제거.
+  `/bin/shell` 유저 프로세스가 항상 터미널 역할을 담당합니다.
+- **프로그램만 Ring 3**: 셸 자체를 포함한 모든 사용자 프로그램은 Ring 3(유저 모드)에서 실행됩니다.
+
+### 8. 인터랙티브 쉘 (Interactive Shell)
 | 명령어 | 설명 |
 |---|---|
 | `help` | 사용 가능한 명령어 목록 출력 |
@@ -52,7 +85,7 @@
 | `md <addr>` | 지정 주소의 메모리 덤프 출력 |
 | `date` / `time` | 현재 날짜/시간 출력 (RTC) |
 | `uptime` | PIT 틱 기반 시스템 가동 시간 출력 |
-| `free` | 힙 메모리 사용량/잔여량 표시 |
+| `free` | TLSF 힙 메모리 사용량/잔여량 표시 |
 | `cpuinfo` | CPUID를 사용한 CPU 제조사 및 기능 플래그 출력 |
 | `pci_info` | PCI 장치 목록 출력 |
 | `vmm_stat` | 가상 메모리 통계 출력 |
@@ -83,7 +116,15 @@
 - [x] **FAT32 → VFS 어댑터**: `vfs_fat.c` — 기존 FAT32 드라이버를 VFS 노드로 래핑.
 - [x] **syscall → VFS 연동**: `sys_open/read/write/close/lseek/unlink/mkdir` 가 VFS를 통해 FAT32로 라우팅.
 
-### 🚧 3단계: 스케줄링 고도화 (진행 예정)
+### ✅ 3단계: 메모리 누수 해결 및 O(1) 할당자 — **완료**
+- [x] **TLSF 힙 할당자**: O(1) Two-Level Segregated Fit 알고리즘으로 `kmalloc` / `kfree` 대체.
+- [x] **process_cleanup_pool**: 좀비 스레드 스택 추적 및 지연 해제 메커니즘 구현.
+- [x] **kthread_exit() 수정**: 스택을 정리 풀에 등록 후 hlt 대기.
+- [x] **kprocess_exit() 수정**: 모든 소속 스레드 스택을 풀에 등록, PCB 즉시 반환.
+- [x] **scheduler_tick() 수정**: 컨텍스트 전환 후 `cleanup_dead_threads(old_tid)` 호출.
+- [x] **커널 셸 폴백 제거**: `launch_shell()` 에서 `shell_init()` 폴백 삭제, 유저 셸 전용 구조.
+
+### 🚧 4단계: 스케줄링 고도화 (진행 예정)
 - [ ] **우선순위 스케줄링**: 현재 Round-Robin에 우선순위 기반 스케줄링 추가.
 - [ ] **IPC (Inter-Process Communication)**: 파이프, 공유 메모리 등.
 - [ ] **fork**: 프로세스 복제 (현재는 exec 중심 모델).

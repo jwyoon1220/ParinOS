@@ -42,6 +42,12 @@ static volatile int multitasking_enabled = 0;
 static uint32_t sched_counter = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  프로세스 정리 풀
+// ─────────────────────────────────────────────────────────────────────────────
+static process_cleanup_entry_t cleanup_pool[CLEANUP_POOL_MAX];
+static int cleanup_count = 0;
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  내부 헬퍼
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -235,13 +241,21 @@ void kthread_exit(void) {
     __asm__("cli");
 
     threads[current_tid].state = KTHREAD_ZOMBIE;
-    // 스택은 여기서 해제하지 않음 (현재 이 스택 위에서 실행 중이므로)
-    // 다음 스케줄러 호출 시 이 스레드는 선택되지 않음
+
+    // 스택을 정리 풀에 추가한다.
+    // 즉시 해제하지 않는 이유: 현재 이 스택 위에서 실행 중이므로 해제하면
+    // 타이머 IRQ 스택 프레임이 손상된다. scheduler_tick() 에서 컨텍스트
+    // 전환 후 cleanup_dead_threads() 가 안전하게 해제한다.
+    if (threads[current_tid].stack != NULL &&
+        cleanup_count < CLEANUP_POOL_MAX) {
+        cleanup_pool[cleanup_count].stack = threads[current_tid].stack;
+        cleanup_pool[cleanup_count].tid   = current_tid;
+        cleanup_count++;
+        threads[current_tid].stack = NULL; // 이중 해제 방지
+    }
 
     __asm__("sti");
 
-    // 다음 타이머 인터럽트가 발생할 때까지 hlt 로 대기
-    // 인터럽트 발생 → scheduler_tick 에서 다른 스레드로 전환됨
     while (1) {
         __asm__("hlt");
     }
@@ -344,16 +358,30 @@ void kprocess_exit(void) {
     __asm__("cli");
 
     kprocess_t* proc = &processes[current_pid];
-    // 소속 스레드를 모두 ZOMBIE 로 표시
+
+    // 소속 스레드를 모두 ZOMBIE 로 표시하고 스택을 정리 풀에 추가한다.
+    // kthread_exit() 와 마찬가지로, 스택은 scheduler_tick() 에서 해제된다.
     for (uint32_t i = 0; i < proc->thread_count; i++) {
         uint32_t tid = proc->thread_ids[i];
-        if (tid < KTHREAD_MAX) {
-            threads[tid].state = KTHREAD_ZOMBIE;
-        } else {
+        if (tid >= KTHREAD_MAX) {
             kprintf("[SCHED] kprocess_exit: invalid tid=%d (data corruption?)", tid);
+            continue;
+        }
+        if (threads[tid].state == KTHREAD_UNUSED) continue;
+
+        threads[tid].state = KTHREAD_ZOMBIE;
+
+        if (threads[tid].stack != NULL && cleanup_count < CLEANUP_POOL_MAX) {
+            cleanup_pool[cleanup_count].stack = threads[tid].stack;
+            cleanup_pool[cleanup_count].tid   = tid;
+            cleanup_count++;
+            threads[tid].stack = NULL; // 이중 해제 방지
         }
     }
-    proc->state = KPROCESS_ZOMBIE;
+
+    // PCB 슬롯은 스레드 목록 참조가 끝난 지금 즉시 반환한다.
+    // 스레드 TCB 슬롯은 cleanup_dead_threads() 가 스택 해제 후 리셋한다.
+    proc->state = KPROCESS_UNUSED;
 
     __asm__("sti");
 
@@ -393,6 +421,44 @@ void kschedule(void) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  cleanup_dead_threads
+//
+//  정리 풀에 쌓인 좀비 스레드의 스택을 해제하고 TCB 슬롯을 UNUSED 로 리셋.
+//
+//  skip_tid: 이번 타이머 IRQ 에서 전환 전의 스레드 ID.
+//    해당 스레드의 스택은 IRQ 스택 프레임이 아직 올라와 있으므로 이번 틱에
+//    해제하지 않고 풀에 남겨두어 다음 틱에 처리한다.
+// ─────────────────────────────────────────────────────────────────────────────
+static void cleanup_dead_threads(uint32_t skip_tid)
+{
+    int new_count = 0;
+    for (int i = 0; i < cleanup_count; i++) {
+        if (cleanup_pool[i].tid == skip_tid) {
+            // 이번 틱은 건너뜀 — 다음 틱에서 처리하도록 풀에 보존
+            if (i != new_count)
+                cleanup_pool[new_count] = cleanup_pool[i];
+            new_count++;
+            continue;
+        }
+
+        // 스택 해제
+        kfree(cleanup_pool[i].stack);
+
+        // TCB 슬롯 초기화 (state = 0 = KTHREAD_UNUSED)
+        uint32_t tid = cleanup_pool[i].tid;
+        if (tid < KTHREAD_MAX) {
+            // stack 은 kthread_exit/kprocess_exit 에서 이미 NULL 로 설정됐지만,
+            // 방어적으로 다시 NULL 로 초기화하여 이중 해제를 확실히 방지한다.
+            threads[tid].stack      = NULL;
+            threads[tid].stack_size = 0;
+            threads[tid].esp        = 0;
+            threads[tid].state      = KTHREAD_UNUSED;
+        }
+    }
+    cleanup_count = new_count;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  scheduler_tick  ← irq0_handler 에서 호출됨
 //
 //  반환값: 다음에 복원할 ESP
@@ -429,6 +495,10 @@ uint32_t scheduler_tick(uint32_t current_esp) {
     // 6. 현재 스레드 ESP 저장
     threads[current_tid].esp = current_esp;
 
+    // IRQ 스택 프레임이 아직 old_tid 의 스택 위에 올라와 있으므로
+    // cleanup_dead_threads 는 이 틱에서 old_tid 의 스택을 건너뛴다.
+    uint32_t old_tid = current_tid;
+
     // 7. 라운드 로빈: 다음 실행 가능한 스레드 탐색
     uint32_t next = (current_tid + 1) % KTHREAD_MAX;
     int searched = 0;
@@ -441,14 +511,16 @@ uint32_t scheduler_tick(uint32_t current_esp) {
         searched++;
     }
 
-    // 실행 가능한 스레드가 없으면 현재 스레드 유지
+    // 실행 가능한 스레드가 없으면 현재 스레드 유지하고 정리만 수행
     if (searched >= KTHREAD_MAX) {
+        cleanup_dead_threads(old_tid);
         return current_esp;
     }
 
-    // 8. 동일 스레드면 전환 없이 반환
+    // 8. 동일 스레드면 전환 없이 정리 후 반환
     if (next == current_tid) {
         threads[current_tid].state = KTHREAD_RUNNING;
+        cleanup_dead_threads(old_tid);
         return current_esp;
     }
 
@@ -481,7 +553,10 @@ uint32_t scheduler_tick(uint32_t current_esp) {
         write_msr(MSR_SYSENTER_ESP, kstack_top);
     }
 
-    // 12. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
+    // 12. 좀비 스레드의 스택 정리 (old_tid 의 스택은 다음 틱으로 연기)
+    cleanup_dead_threads(old_tid);
+
+    // 13. 새 스레드의 ESP 반환 → irq0_handler 가 mov esp, eax 로 전환
     return threads[current_tid].esp;
 }
 
