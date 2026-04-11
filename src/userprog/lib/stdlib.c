@@ -112,13 +112,27 @@ void *malloc(size_t size) {
         p += HDR_SIZE + hdr->size;
     }
 
-    /* ── 힙 확장 ── */
-    void *new_mem = sbrk_impl((int)(HDR_SIZE + size));
+    /* ── 힙 확장 ──
+     * 요청 크기를 페이지 단위로 올림하여 syscall 빈도를 줄입니다.
+     * 남는 공간은 별도 빈 블록으로 등록하여 이후 malloc 에서 재사용됩니다. */
+    size_t need   = HDR_SIZE + size;
+    size_t chunksz = (need + 4095u) & ~4095u; /* PAGE_SIZE=4096 으로 올림 */
+
+    void *new_mem = sbrk_impl((int)chunksz);
     if (new_mem == (void *)-1) return (void *)0;
 
     block_hdr_t *hdr = (block_hdr_t *)new_mem;
     hdr->size = size;
     hdr->used = 1;
+
+    /* 남은 공간이 헤더 + 최소 블록 이상이면 빈 블록으로 등록 */
+    size_t leftover = chunksz - need;
+    if (leftover >= HDR_SIZE + MIN_SPLIT) {
+        block_hdr_t *extra = (block_hdr_t *)((unsigned char *)new_mem + need);
+        extra->size = (unsigned int)(leftover - HDR_SIZE);
+        extra->used = 0;
+    }
+
     return (void *)((unsigned char *)new_mem + HDR_SIZE);
 }
 
@@ -160,10 +174,21 @@ void *realloc(void *ptr, size_t size) {
     if (!ptr) return malloc(size);
     if (size == 0) { free(ptr); return (void *)0; }
 
+    /* 4바이트 정렬 */
+    size = (size + 3u) & ~3u;
+
     block_hdr_t *hdr = (block_hdr_t *)((unsigned char *)ptr - HDR_SIZE);
 
-    /* 이미 충분한 공간이면 그대로 반환 */
-    if (hdr->size >= size) return ptr;
+    if (hdr->size >= size) {
+        /* 블록이 더 크면 잉여 공간을 빈 블록으로 분할하여 낭비 방지 */
+        if (hdr->size >= size + HDR_SIZE + MIN_SPLIT) {
+            block_hdr_t *rest = (block_hdr_t *)((unsigned char *)ptr + size);
+            rest->size = hdr->size - size - HDR_SIZE;
+            rest->used = 0;
+            hdr->size  = (unsigned int)size;
+        }
+        return ptr;
+    }
 
     void *newptr = malloc(size);
     if (!newptr) return (void *)0;
