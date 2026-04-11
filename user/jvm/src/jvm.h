@@ -39,6 +39,9 @@ static inline jval_t jval_ref(void *p) {
 #define OBJ_INSTANCE    4
 #define OBJ_PRINTSTREAM 5
 #define OBJ_STRINGBLD   6
+#define OBJ_SOCKET      7   /* java.net.Socket / java.net.ServerSocket */
+#define OBJ_INETADDR    8   /* java.net.InetAddress                    */
+#define OBJ_SOCK_STREAM 9   /* java.io.{Input,Output}Stream via socket */
 
 struct class_info;
 
@@ -53,6 +56,16 @@ typedef struct jobj {
             jval_t            *fields;
         } inst;
         struct { char *buf; int len; int cap; }      sbld;  /* OBJ_STRINGBLD  */
+        struct {                                            /* OBJ_SOCKET      */
+            int sfd;        /* kernel socket FD (< 0 = not yet open) */
+            int connected;  /* 1 = connected/accepted                */
+            int is_server;  /* 1 = ServerSocket                      */
+        } sock;
+        struct { uint32_t addr; char host[64]; }    iaddr; /* OBJ_INETADDR    */
+        struct {                                            /* OBJ_SOCK_STREAM */
+            int sfd;       /* kernel socket FD                        */
+            int is_input;  /* 1 = InputStream, 0 = OutputStream       */
+        } sstrm;
     };
 } jobj_t;
 
@@ -164,6 +177,9 @@ jobj_t *obj_stringbld(jvm_t *jvm);
 jobj_t *obj_array_int(jvm_t *jvm, int len);
 jobj_t *obj_array_ref(jvm_t *jvm, int len);
 jobj_t *obj_instance(jvm_t *jvm, class_info_t *klass);
+jobj_t *obj_socket(jvm_t *jvm);
+jobj_t *obj_inetaddr(jvm_t *jvm, uint32_t addr, const char *host);
+jobj_t *obj_sock_stream(jvm_t *jvm, int sfd, int is_input);
 
 /* classfile.c */
 class_info_t  *classfile_load(jvm_t *jvm, const char *path);

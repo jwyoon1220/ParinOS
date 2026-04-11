@@ -58,6 +58,16 @@
 #define SYS_READDIR      201  // readdir (디렉터리 엔트리 읽기)
 #define SYS_CLOSEDIR     202  // closedir (디렉터리 닫기)
 
+// ParinOS 네트워크 소켓 시스템 콜
+#define SYS_SOCKET       300  // socket(domain, type, protocol)
+#define SYS_CONNECT      301  // connect(sfd, addr, port)
+#define SYS_SEND         302  // send(sfd, buf, len)
+#define SYS_RECV         303  // recv(sfd, buf, len)
+#define SYS_BIND         304  // bind(sfd, addr, port)
+#define SYS_LISTEN       305  // listen(sfd, backlog)
+#define SYS_ACCEPT       306  // accept(sfd, &addr, &port)
+#define SYS_GETHOST      308  // gethostbyname(name, &addr)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 유저 프로세스 디스크립터
 // ─────────────────────────────────────────────────────────────────────────────

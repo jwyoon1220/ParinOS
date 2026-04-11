@@ -31,6 +31,16 @@
 #define SYS_READDIR  201
 #define SYS_CLOSEDIR 202
 
+/* ParinOS 네트워크 소켓 시스템 콜 */
+#define SYS_SOCKET   300
+#define SYS_CONNECT  301
+#define SYS_SEND     302
+#define SYS_RECV     303
+#define SYS_BIND     304
+#define SYS_LISTEN   305
+#define SYS_ACCEPT   306
+#define SYS_GETHOST  308
+
 /* ── 파일 열기 플래그 (Linux 호환) ─────────────────────────────────────── */
 #define O_RDONLY    0
 #define O_WRONLY    1

@@ -93,3 +93,40 @@ jobj_t *obj_instance(jvm_t *jvm, class_info_t *klass) {
     }
     return o;
 }
+
+/* ── obj_socket ──────────────────────────────────────────────────────── */
+jobj_t *obj_socket(jvm_t *jvm) {
+    jobj_t *o = (jobj_t *)heap_alloc(jvm, sizeof(jobj_t));
+    if (!o) return (jobj_t *)0;
+    o->type          = OBJ_SOCKET;
+    o->sock.sfd       = -1;
+    o->sock.connected = 0;
+    o->sock.is_server = 0;
+    return o;
+}
+
+/* ── obj_inetaddr ────────────────────────────────────────────────────── */
+jobj_t *obj_inetaddr(jvm_t *jvm, uint32_t addr, const char *host) {
+    jobj_t *o = (jobj_t *)heap_alloc(jvm, sizeof(jobj_t));
+    if (!o) return (jobj_t *)0;
+    o->type      = OBJ_INETADDR;
+    o->iaddr.addr = addr;
+    if (host) {
+        int i;
+        for (i = 0; i < 63 && host[i]; i++) o->iaddr.host[i] = host[i];
+        o->iaddr.host[i] = '\0';
+    } else {
+        o->iaddr.host[0] = '\0';
+    }
+    return o;
+}
+
+/* ── obj_sock_stream ─────────────────────────────────────────────────── */
+jobj_t *obj_sock_stream(jvm_t *jvm, int sfd, int is_input) {
+    jobj_t *o = (jobj_t *)heap_alloc(jvm, sizeof(jobj_t));
+    if (!o) return (jobj_t *)0;
+    o->type         = OBJ_SOCK_STREAM;
+    o->sstrm.sfd      = sfd;
+    o->sstrm.is_input = is_input;
+    return o;
+}
