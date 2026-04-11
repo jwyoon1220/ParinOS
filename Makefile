@@ -190,6 +190,7 @@ run: all headers
 		-drive file=$(DISK_IMG),format=raw,id=disk0,if=none \
 		-device ahci,id=ahci \
 		-device ide-hd,drive=disk0,bus=ahci.0 \
+		-nic user,model=ne2k_pci \
 		-serial stdio
 
 clean:

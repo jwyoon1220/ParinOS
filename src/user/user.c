@@ -10,6 +10,7 @@
 #include "../elf/elf.h"
 #include "../std/kstdio.h"
 #include "../mem/vmm.h"
+#include "../net/net.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 파일 디스크립터 테이블
@@ -119,6 +120,11 @@ static uint32_t sys_open(uint32_t path_vaddr, uint32_t flags, uint32_t mode) {
 
 // SYS_CLOSE(6): 파일 닫기
 static uint32_t sys_close(uint32_t fd) {
+    /* 소켓 FD는 별도 소켓 레이어로 위임 */
+    if (is_socket_fd((int)fd)) {
+        int err = ksocket_close((int)fd);
+        return (err == 0) ? 0 : (uint32_t)-9;
+    }
     if (fd < FD_FILE_MIN || fd >= FD_TABLE_MAX || g_fd_table[fd] == NULL) {
         return (uint32_t)-9; // -EBADF
     }
@@ -294,6 +300,64 @@ static uint32_t sys_closedir(uint32_t fd) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 소켓 시스템 콜 구현  (SYS_SOCKET=300 ~ SYS_GETHOST=308)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// SYS_SOCKET(300): 소켓 생성  socket(domain, type, protocol)
+static uint32_t sys_socket(uint32_t domain, uint32_t type, uint32_t protocol) {
+    (void)protocol;
+    int sfd = ksocket_create((int)domain, (int)type);
+    return (sfd < 0) ? (uint32_t)(int32_t)sfd : (uint32_t)sfd;
+}
+
+// SYS_CONNECT(301): 원격 호스트에 연결  connect(sfd, addr, port)
+static uint32_t sys_connect(uint32_t sfd, uint32_t addr, uint32_t port) {
+    int ret = ksocket_connect((int)sfd, addr, (uint16_t)port);
+    return (uint32_t)(int32_t)ret;
+}
+
+// SYS_SEND(302): 데이터 전송  send(sfd, buf_vaddr, len)
+static uint32_t sys_send(uint32_t sfd, uint32_t buf_vaddr, uint32_t len) {
+    int ret = ksocket_send((int)sfd, (const void *)buf_vaddr, len);
+    return (uint32_t)(int32_t)ret;
+}
+
+// SYS_RECV(303): 데이터 수신  recv(sfd, buf_vaddr, len)
+static uint32_t sys_recv(uint32_t sfd, uint32_t buf_vaddr, uint32_t len) {
+    int ret = ksocket_recv((int)sfd, (void *)buf_vaddr, len);
+    return (uint32_t)(int32_t)ret;
+}
+
+// SYS_BIND(304): 소켓 주소 바인드  bind(sfd, addr, port)
+static uint32_t sys_bind(uint32_t sfd, uint32_t addr, uint32_t port) {
+    int ret = ksocket_bind((int)sfd, addr, (uint16_t)port);
+    return (uint32_t)(int32_t)ret;
+}
+
+// SYS_LISTEN(305): 연결 수신 대기  listen(sfd, backlog)
+static uint32_t sys_listen(uint32_t sfd, uint32_t backlog) {
+    int ret = ksocket_listen((int)sfd, (int)backlog);
+    return (uint32_t)(int32_t)ret;
+}
+
+// SYS_ACCEPT(306): 연결 수락  accept(sfd, addr_vaddr, port_vaddr)
+static uint32_t sys_accept(uint32_t sfd, uint32_t addr_vaddr,
+                            uint32_t port_vaddr) {
+    uint32_t *addr_ptr = (addr_vaddr != 0) ? (uint32_t *)addr_vaddr : (uint32_t *)0;
+    uint16_t *port_ptr = (port_vaddr != 0) ? (uint16_t *)port_vaddr : (uint16_t *)0;
+    int ret = ksocket_accept((int)sfd, addr_ptr, port_ptr);
+    return (uint32_t)(int32_t)ret;
+}
+
+// SYS_GETHOST(308): 호스트명 → IPv4  gethostbyname(name_vaddr, addr_vaddr)
+static uint32_t sys_gethost(uint32_t name_vaddr, uint32_t addr_vaddr) {
+    const char *name = (const char *)name_vaddr;
+    uint32_t   *addr = (uint32_t *)addr_vaddr;
+    int ret = ksocket_gethostbyname(name, addr);
+    return (uint32_t)(int32_t)ret;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 시스템 콜 디스패처
 // ─────────────────────────────────────────────────────────────────────────────
 uint32_t syscall_dispatch(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
@@ -314,6 +378,14 @@ uint32_t syscall_dispatch(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx
         case SYS_OPENDIR: return sys_opendir(ebx);
         case SYS_READDIR: return sys_readdir(ebx, ecx);
         case SYS_CLOSEDIR:return sys_closedir(ebx);
+        case SYS_SOCKET:  return sys_socket(ebx, ecx, edx);
+        case SYS_CONNECT: return sys_connect(ebx, ecx, edx);
+        case SYS_SEND:    return sys_send(ebx, ecx, edx);
+        case SYS_RECV:    return sys_recv(ebx, ecx, edx);
+        case SYS_BIND:    return sys_bind(ebx, ecx, edx);
+        case SYS_LISTEN:  return sys_listen(ebx, ecx);
+        case SYS_ACCEPT:  return sys_accept(ebx, ecx, edx);
+        case SYS_GETHOST: return sys_gethost(ebx, ecx);
         default:
             klog_warn("[SYSCALL] Unknown syscall: %d\n", (int)eax);
             return (uint32_t)-38; // -ENOSYS
