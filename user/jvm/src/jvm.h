@@ -183,6 +183,7 @@ jobj_t *obj_sock_stream(jvm_t *jvm, int sfd, int is_input);
 
 /* classfile.c */
 class_info_t  *classfile_load(jvm_t *jvm, const char *path);
+class_info_t  *classfile_load_from_memory(jvm_t *jvm, const uint8_t *data, uint32_t size);
 class_info_t  *classloader_resolve(jvm_t *jvm, const char *name);
 const char    *cp_utf8(class_info_t *klass, int idx);
 method_info_t *class_find_method(class_info_t *klass,

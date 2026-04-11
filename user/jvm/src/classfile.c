@@ -252,3 +252,115 @@ class_info_t *classloader_resolve(jvm_t *jvm, const char *name) {
     }
     return klass;
 }
+
+/* ── classfile_load_from_memory: 메모리 버퍼에서 직접 .class 파싱 ── */
+class_info_t *classfile_load_from_memory(jvm_t *jvm,
+                                          const uint8_t *data,
+                                          uint32_t size) {
+    if (!data || size < 10) return (class_info_t *)0;
+    if (r32(data) != 0xCAFEBABE) return (class_info_t *)0;
+
+    /* 복사본 생성 (classfile_load 와 동일한 소유권 모델) */
+    uint8_t *buf = (uint8_t *)malloc((size_t)size);
+    if (!buf) return (class_info_t *)0;
+    memcpy(buf, data, (size_t)size);
+
+    class_info_t *klass = (class_info_t *)malloc(sizeof(class_info_t));
+    if (!klass) { free(buf); return (class_info_t *)0; }
+    memset(klass, 0, sizeof(class_info_t));
+    klass->raw = buf;
+
+    const uint8_t *p = buf + 8;
+
+    int cp_count = (int)r16(p); p += 2;
+    if (cp_count >= MAX_CP) cp_count = MAX_CP;
+    klass->cp_count = cp_count;
+    for (int i = 1; i < cp_count; i++) {
+        uint8_t tag = *p++;
+        klass->cp[i].tag = tag;
+        switch (tag) {
+        case CP_UTF8: {
+            int len = (int)r16(p); p += 2;
+            char *s = (char *)malloc((size_t)len + 1);
+            if (s) { memcpy(s, p, (size_t)len); s[len] = '\0'; }
+            klass->cp[i].utf8 = s;
+            p += len;
+            break;
+        }
+        case CP_INTEGER: klass->cp[i].ival = (int32_t)r32(p); p += 4; break;
+        case 4: p += 4; break;
+        case 5: p += 8; i++; break;
+        case 6: p += 8; i++; break;
+        case CP_CLASS:   klass->cp[i].class_idx  = r16(p); p += 2; break;
+        case CP_STRING:  klass->cp[i].string_idx = r16(p); p += 2; break;
+        case CP_FIELDREF:
+        case CP_METHODREF:
+        case CP_IFACEREF:
+            klass->cp[i].ref.cls = r16(p); p += 2;
+            klass->cp[i].ref.nat = r16(p); p += 2;
+            break;
+        case CP_NAMETYPE:
+            klass->cp[i].nat.name = r16(p); p += 2;
+            klass->cp[i].nat.desc = r16(p); p += 2;
+            break;
+        default: free(buf); free(klass); return (class_info_t *)0;
+        }
+    }
+    /* 나머지 파싱은 classfile_load 와 동일 — classloader_register 포함 */
+    p += 2; /* access_flags */
+    uint16_t this_class  = r16(p); p += 2;
+    p += 2; /* super_class */
+    uint16_t ifc_count   = r16(p); p += 2;
+    p += ifc_count * 2;
+
+    klass->name = (char *)cp_utf8(klass, klass->cp[this_class].class_idx);
+
+    /* fields */
+    uint16_t fc = r16(p); p += 2;
+    klass->field_count = (fc < MAX_FIELDS) ? (int)fc : MAX_FIELDS;
+    for (int i = 0; i < (int)fc; i++) {
+        p += 2;
+        uint16_t ni = r16(p); p += 2;
+        uint16_t di = r16(p); p += 2;
+        uint16_t ac = r16(p); p += 2;
+        if (i < MAX_FIELDS) {
+            klass->fields[i].name = (char *)cp_utf8(klass, ni);
+            klass->fields[i].descriptor = (char *)cp_utf8(klass, di);
+            (void)ac;
+        }
+        for (uint16_t j = 0; j < ac; j++) {
+            p += 2;
+            uint32_t al = r32(p); p += 4 + al;
+        }
+    }
+
+    /* methods */
+    uint16_t mc = r16(p); p += 2;
+    klass->method_count = (mc < MAX_METHODS) ? (int)mc : MAX_METHODS;
+    for (int i = 0; i < (int)mc; i++) {
+        p += 2;
+        uint16_t ni = r16(p); p += 2;
+        uint16_t di = r16(p); p += 2;
+        uint16_t ac = r16(p); p += 2;
+        if (i < MAX_METHODS) {
+            klass->methods[i].name       = (char *)cp_utf8(klass, ni);
+            klass->methods[i].descriptor = (char *)cp_utf8(klass, di);
+        }
+        for (uint16_t j = 0; j < ac; j++) {
+            uint16_t attr_ni = r16(p); p += 2;
+            uint32_t attr_len = r32(p); p += 4;
+            if (i < MAX_METHODS && strcmp(cp_utf8(klass, attr_ni), "Code") == 0) {
+                klass->methods[i].max_stack  = (int)r16(p);
+                klass->methods[i].max_locals = (int)r16(p + 2);
+                uint32_t code_len = r32(p + 4);
+                klass->methods[i].code      = (uint8_t *)(p + 8);
+                klass->methods[i].code_len  = (int)code_len;
+            }
+            p += attr_len;
+        }
+    }
+
+    if (jvm->loader.count < MAX_CLASSES)
+        jvm->loader.classes[jvm->loader.count++] = klass;
+    return klass;
+}
