@@ -9,6 +9,7 @@
 #include "../fs/vfs.h"
 #include "../elf/elf.h"
 #include "../std/kstdio.h"
+#include "../mem/vmm.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 파일 디스크립터 테이블
@@ -154,10 +155,42 @@ static uint32_t sys_yield(void) {
     return 0;
 }
 
-// SYS_BRK(45): 스텁 — 유저 힙 확장 (현재는 -ENOMEM 반환)
+// SYS_BRK(45): 유저 힙 브레이크 포인터 조정
+//   addr == 0  → 현재 brk 반환 (조회)
+//   addr > cur → 힙 확장: 필요한 페이지를 VMM 으로 할당 후 brk 갱신
+//   addr < cur → 힙 축소: brk 값만 갱신 (페이지는 유지)
 static uint32_t sys_brk(uint32_t addr) {
-    (void)addr;
-    return (uint32_t)-12; // -ENOMEM (stub)
+    kthread_t *t = kthread_current();
+    if (!t) return (uint32_t)-12; /* -ENOMEM */
+
+    uint32_t cur = t->user_brk;
+
+    /* 조회 또는 초기화 전 */
+    if (addr == 0 || addr == cur) return cur;
+
+    if (addr > cur) {
+        /* 힙 확장: [cur, new_top) 범위에 아직 매핑되지 않은 페이지 할당
+         *
+         *  cur_page_top: cur 를 포함하는 페이지의 바로 다음 페이지 시작
+         *                (즉, 아직 할당되지 않은 첫 번째 페이지)
+         *  new_page_top: addr 를 커버하기 위해 필요한 페이지 경계 끝
+         */
+        uint32_t cur_page_top = (cur + PAGE_SIZE - 1) & ~(uint32_t)(PAGE_SIZE - 1);
+        uint32_t new_page_top = (addr + PAGE_SIZE - 1) & ~(uint32_t)(PAGE_SIZE - 1);
+
+        if (new_page_top > cur_page_top) {
+            uint32_t count = (new_page_top - cur_page_top) / PAGE_SIZE;
+            vmm_result_t res = vmm_alloc_virtual_pages(cur_page_top, count, VMM_ALLOC_USER);
+            if (res != VMM_SUCCESS) {
+                /* 할당 실패: 기존 brk 를 그대로 반환 */
+                return cur;
+            }
+        }
+    }
+    /* addr < cur (힙 축소): brk 값만 낮춤, 페이지는 해제하지 않음 */
+
+    t->user_brk = addr;
+    return addr;
 }
 
 // SYS_EXEC(11): ELF 바이너리 실행 (경로, argc, argv)
