@@ -61,6 +61,83 @@ static void launch_shell(void) {
     }
 }
 
+/*
+ * show_boot_time — KAIST NTP 서버에서 현재 시각을 가져와 VESA 화면에 표시합니다.
+ *
+ * 표시 위치: 화면 우측 상단 (가로 중앙 오른쪽, 세로 상단 패딩 20px)
+ * 폰트: font_load_embedded_ttf() 로 로드된 TrueType (16px)
+ * 형식: "2025-04-11  09:32:05 UTC"  (흰 글씨 / 반투명 어두운 배경 박스)
+ *
+ * VESA / 폰트가 준비되지 않았거나 NTP 응답이 없으면 조용히 건너뜁니다.
+ */
+static void show_boot_time(void) {
+    if (!vesa_is_active() || !font_is_ready()) return;
+
+    sntp_result_t t;
+    kprintf_serial("[TIME] Querying KAIST NTP (time.kaist.ac.kr)...\n");
+    if (sntp_query(&t) != 0) {
+        kprintf_serial("[TIME] NTP query failed\n");
+        return;
+    }
+    kprintf_serial("[TIME] %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+                   t.year, t.month, t.day, t.hour, t.min, t.sec);
+
+    /* ── 날짜/시간 문자열 조립 ─────────────────────────────────── */
+    char date_str[32];  /* "2025-04-11" */
+    char time_str[32];  /* "09:32:05 UTC" */
+
+    /* ksnprintf 가 %02u 를 지원하지 않을 수 있으므로 직접 패딩 */
+    ksnprintf(date_str, sizeof(date_str), "%04d-%02d-%02d",
+              (int)t.year, (int)t.month, (int)t.day);
+    ksnprintf(time_str, sizeof(time_str), "%02d:%02d:%02d UTC",
+              (int)t.hour, (int)t.min, (int)t.sec);
+
+    int fw = font_get_width();
+    int fh = font_get_height();
+
+    uint32_t sw = vesa_get_width();
+    uint32_t sh = vesa_get_height();
+
+    /* 날짜 문자열 길이 */
+    int date_len = 0; { const char *p = date_str; while (*p++) date_len++; }
+    int time_len = 0; { const char *p = time_str; while (*p++) time_len++; }
+
+    /* 더 긴 줄을 기준으로 박스 너비 계산 */
+    int max_len  = date_len > time_len ? date_len : time_len;
+    int pad      = 12;                             /* 좌우 패딩 (px) */
+    int box_w    = max_len * fw + pad * 2;
+    int box_h    = fh * 2 + pad * 3;              /* 날짜 + 시각 두 줄 */
+
+    /* 우측 상단 배치 (화면 오른쪽 끝에서 16px 여백) */
+    int box_x = (int)sw - box_w - 16;
+    int box_y = 16;
+    if (box_x < 0) box_x = 0;
+
+    /* 반투명 배경 박스 (어두운 남색) */
+    vesa_fill_rect((uint32_t)box_x, (uint32_t)box_y,
+                   (uint32_t)box_w, (uint32_t)box_h,
+                   0x10, 0x18, 0x30);
+
+    /* 날짜 줄 (밝은 하늘색) */
+    int tx = box_x + pad;
+    int ty = box_y + pad;
+    for (int i = 0; i < date_len; i++) {
+        font_draw_char(tx + i * fw, ty, (uint32_t)(unsigned char)date_str[i],
+                       0xAD, 0xD8, 0xFF,   /* 전경: 하늘색 */
+                       0x10, 0x18, 0x30);  /* 배경: 박스 색 */
+    }
+
+    /* 시각 줄 (밝은 흰색) */
+    ty += fh + pad;
+    for (int i = 0; i < time_len; i++) {
+        font_draw_char(tx + i * fw, ty, (uint32_t)(unsigned char)time_str[i],
+                       0xFF, 0xFF, 0xFF,   /* 전경: 흰색 */
+                       0x10, 0x18, 0x30);  /* 배경: 박스 색 */
+    }
+
+    (void)sh;  /* 현재 미사용 */
+}
+
 void kmain() {
     /* ── 부동소수점 연산 유닛(FPU) 활성화 ──────────────────────────────── */
     fpu_init();
@@ -116,6 +193,13 @@ void kmain() {
 
     // === 6단계: 네트워크 초기화 ===
     init_network();
+
+    /* ── KAIST NTP 시간 동기화 + VESA 화면 표시 ───────────────────────────
+     * font_load_embedded_ttf() 와 init_network() 가 모두 완료된 이후에
+     * KAIST 시간 서버(time.kaist.ac.kr)에서 현재 UTC 시각을 가져와
+     * 화면 우측 상단에 날짜/시각을 렌더링합니다.
+     * ─────────────────────────────────────────────────────────────────── */
+    show_boot_time();
 
     // === 7단계: 멀티태스킹 시스템 초기화 ===
     init_multitasking();
