@@ -14,9 +14,10 @@
 /* ── Standard C-like interfaces ──────────────────────────────────────────── */
 #include "syscall.h"    /* Raw sysenter stubs + syscall numbers              */
 #include "unistd.h"     /* open/read/write/close/lseek/getpid/exec/…         */
-#include "stdio.h"      /* FILE*, printf, fgets, fread, fwrite, …            */
-#include "stdlib.h"     /* malloc/free/exit/atoi/…                           */
+#include "stdio.h"      /* FILE*, printf/scanf families, fgets, fread, …     */
+#include "stdlib.h"     /* malloc/free/exit/atoi/qsort/bsearch/…             */
 #include "string.h"     /* strlen/strcpy/memset/memcmp/…                     */
+#include "ctype.h"      /* isdigit/isalpha/isspace/toupper/tolower/…         */
 #include "dirent.h"     /* opendir_fd/readdir_r/closedir_fd                  */
 #include "sys/stat.h"   /* stat() / S_ISREG / S_ISDIR                        */
 

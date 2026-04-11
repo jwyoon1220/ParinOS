@@ -31,6 +31,23 @@ long          strtol(const char *s, char **endptr, int base);
 /* ── Utilities ───────────────────────────────────────────────────────────── */
 int abs(int x);
 
+/* ── Searching and sorting ───────────────────────────────────────────────── */
+
+/**
+ * Sort an array of nmemb elements, each of size bytes, using compar
+ * to compare two elements.  In-place quicksort with insertion sort for
+ * small partitions.
+ */
+void qsort(void *base, size_t nmemb, size_t size,
+           int (*compar)(const void *, const void *));
+
+/**
+ * Binary search for key in a sorted array.
+ * Returns a pointer to the matching element, or NULL if not found.
+ */
+void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+              int (*compar)(const void *, const void *));
+
 /* ── Min / max macros ────────────────────────────────────────────────────── */
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))

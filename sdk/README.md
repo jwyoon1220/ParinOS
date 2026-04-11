@@ -285,3 +285,127 @@ At the ParinOS shell prompt, type the program name:
 ```
 ParinOS> myprogram
 ```
+
+---
+
+## What's new — developer-friendly C standard-library APIs
+
+### ctype.h — Character classification & conversion
+
+```c
+int isalpha(int c);   int isdigit(int c);   int isalnum(int c);
+int isupper(int c);   int islower(int c);   int isspace(int c);
+int isblank(int c);   int isprint(int c);   int isgraph(int c);
+int ispunct(int c);   int iscntrl(int c);   int isxdigit(int c);
+int toupper(int c);   int tolower(int c);
+```
+
+All header-only static inlines; no extra object file required.
+
+---
+
+### Enhanced printf — new format specifiers
+
+| Specifier | Example | Notes |
+|-----------|---------|-------|
+| `%o` | `printf("%o", 255)` → `377` | Unsigned octal |
+| `%#o` | `printf("%#o", 255)` → `0377` | Octal with `0` prefix |
+| `%ld` / `%li` | `printf("%ld", -1L)` | Signed `long` |
+| `%lu` / `%lo` / `%lx` / `%lX` | `printf("%lu", 1UL)` | Unsigned `long` variants |
+| `%zu` | `printf("%zu", sizeof(int))` | `size_t` (= `unsigned` on i686) |
+| `%#x` / `%#X` | `printf("%#x", 255)` → `0xff` | Hex with `0x`/`0X` prefix |
+| `%+d` | `printf("%+d", 5)` → `+5` | Always show sign |
+| `%n` | `printf("hi%n", &n)` → n=2 | Store chars written so far |
+| `%05d` | `printf("%05d", 7)` → `00007` | Zero-padded width |
+| `%-10s` | `printf("%-10s", "hi")` → `"hi        "` | Left-aligned |
+
+---
+
+### scanf family — formatted input
+
+```c
+int scanf(const char *fmt, ...);
+int fscanf(FILE *f, const char *fmt, ...);
+int sscanf(const char *str, const char *fmt, ...);
+int vscanf(const char *fmt, va_list ap);
+int vfscanf(FILE *f, const char *fmt, va_list ap);
+int vsscanf(const char *str, const char *fmt, va_list ap);
+```
+
+**Supported conversion specifiers:**
+
+| Specifier | Reads | Notes |
+|-----------|-------|-------|
+| `%d` | `int*` | Signed decimal integer |
+| `%i` | `int*` | Integer with base auto-detection (0x=hex, 0=octal) |
+| `%u` | `unsigned int*` | Unsigned decimal |
+| `%o` | `unsigned int*` | Unsigned octal |
+| `%x` / `%X` | `unsigned int*` | Unsigned hexadecimal |
+| `%ld` / `%li` / `%lu` / `%lo` / `%lx` | `long*` / `unsigned long*` | Long variants |
+| `%s` | `char*` | Whitespace-delimited word (null-terminated) |
+| `%c` | `char*` | Raw character(s); no whitespace skipping |
+| `%n` | `int*` | Store number of chars consumed so far |
+| `%*…` | — | Suppress assignment (read but discard) |
+| Width | `%5d`, `%10s` | Limit maximum characters consumed |
+| `%%` | — | Match a literal `%` |
+
+Return value: number of items successfully assigned, or `-1` on input failure
+before any assignment.
+
+**Examples:**
+```c
+int a, b;
+char name[32];
+scanf("%d %d %s", &a, &b, name);          /* read from keyboard  */
+fscanf(f, "%d %d",  &a, &b);              /* read from file      */
+sscanf("42 hello", "%d %s", &a, name);   /* parse from string   */
+
+/* Base auto-detect with %i */
+int v; sscanf("0xFF", "%i", &v);  /* v = 255 */
+sscanf("010",  "%i", &v);         /* v = 8   */
+sscanf("42",   "%i", &v);         /* v = 42  */
+
+/* Suppress a field */
+sscanf("100 skip 200", "%d %*s %d", &a, &b); /* a=100, b=200 */
+```
+
+---
+
+### Additional stdio functions
+
+```c
+int  ungetc(int c, FILE *f);     /* Push one character back into stream     */
+void rewind(FILE *f);            /* Seek to start, clear error/EOF flags     */
+char *gets_s(char *buf, int n);  /* Safe stdin line read (strips '\n')       */
+```
+
+---
+
+### stdlib.h additions — sorting and searching
+
+```c
+void  qsort(void *base, size_t n, size_t sz,
+            int (*cmp)(const void *, const void *));
+
+void *bsearch(const void *key, const void *base, size_t n, size_t sz,
+              int (*cmp)(const void *, const void *));
+```
+
+`qsort` uses an in-place introsort (quicksort with insertion sort for small
+partitions and median-of-three pivot selection).  `bsearch` requires the array
+to be sorted in ascending order according to `cmp`.
+
+**Example:**
+```c
+int cmp_int(const void *a, const void *b) {
+    return *(const int*)a - *(const int*)b;
+}
+
+int arr[] = { 5, 3, 8, 1, 9 };
+qsort(arr, 5, sizeof(int), cmp_int);
+/* arr is now { 1, 3, 5, 8, 9 } */
+
+int key = 8;
+int *p = bsearch(&key, arr, 5, sizeof(int), cmp_int);
+if (p) printf("found: %d\n", *p);
+```

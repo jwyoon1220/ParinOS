@@ -26,6 +26,7 @@ typedef struct {
     int  buf_len;
     int  eof;
     int  err;
+    int  unget_char;  /* -1 = none; >= 0 = pushed-back character */
 } FILE;
 
 extern FILE *stdin;
@@ -67,5 +68,25 @@ int fseek(FILE *f, long offset, int whence);
 long ftell(FILE *f);
 
 void perror(const char *s);
+
+/* ── Formatted input ─────────────────────────────────────────────────────── */
+int scanf(const char *fmt, ...);
+int fscanf(FILE *f, const char *fmt, ...);
+int sscanf(const char *str, const char *fmt, ...);
+int vscanf(const char *fmt, va_list ap);
+int vfscanf(FILE *f, const char *fmt, va_list ap);
+int vsscanf(const char *str, const char *fmt, va_list ap);
+
+/* ── Push-back / rewind ──────────────────────────────────────────────────── */
+int  ungetc(int c, FILE *f);
+void rewind(FILE *f);
+
+/* ── Safe line input ─────────────────────────────────────────────────────── */
+
+/**
+ * Read one line from stdin into buf (at most size-1 chars).
+ * Strips the trailing newline.  Safer replacement for gets().
+ */
+char *gets_s(char *buf, int size);
 
 #endif /* PARIN_SDK_STDIO_H */
