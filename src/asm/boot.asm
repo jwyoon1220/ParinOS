@@ -218,7 +218,7 @@ init_pm:
     mov es, ax
     mov fs, ax
     mov gs, ax
-    mov ebp, 0x90000
+    mov ebp, 0x9E000        ; 부트 스택 628KB (0x9E000 - 0x1000)
     mov esp, ebp
 
     ; 2단계 C 로더 (0x10000)로 점프

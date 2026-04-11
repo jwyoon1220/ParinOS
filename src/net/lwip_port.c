@@ -124,7 +124,7 @@ static inline uint32_t ks_htonl(uint32_t x) {
 /* ── 이더넷 프레임 전송 ─────────────────────────────────────────── */
 static int eth_send(const uint8_t *dst_mac, uint16_t ethertype,
                      const void *payload, uint16_t plen) {
-    uint8_t frame[1514];
+    static uint8_t frame[1514];
     if (plen + 14 > 1514) return -1;
 
     /* 이더넷 헤더 */
@@ -215,7 +215,7 @@ static int ip_send(uint32_t dst_ip, uint8_t proto,
     }
 
     /* IPv4 헤더 조립 */
-    uint8_t buf[1500];
+    static uint8_t buf[1500];
     ipv4_hdr_t *iph = (ipv4_hdr_t *)buf;
     iph->ver_ihl   = 0x45;
     iph->dscp      = 0;
@@ -237,7 +237,7 @@ static int ip_send(uint32_t dst_ip, uint8_t proto,
 static int tcp_send_flags(int idx, uint8_t flags,
                            const void *data, uint16_t dlen) {
     tcp_sock_t *s = &g_tcp[idx];
-    uint8_t  seg[1460 + 20];
+    static uint8_t  seg[1460 + 20];
     tcp_hdr_t *th = (tcp_hdr_t *)seg;
     th->src_port = ks_htons(s->local_port);
     th->dst_port = ks_htons(s->remote_port);
@@ -349,9 +349,10 @@ static void handle_tcp(uint32_t src_ip, const uint8_t *data, uint16_t len) {
 /* ── ICMP Echo Reply ─────────────────────────────────────────────── */
 static void handle_icmp(uint32_t src_ip, const uint8_t *data, uint16_t len) {
     if (len < 8) return;
+    if (len > 1500) return;    /* 과도한 패킷 무시 */
     if (data[0] != 8) return;  /* type=8: Echo Request */
     /* Echo Reply */
-    uint8_t reply[len];
+    static uint8_t reply[1500];
     for (uint16_t i = 0; i < len; i++) reply[i] = data[i];
     reply[0] = 0;  /* type=0: Echo Reply */
     reply[2] = 0; reply[3] = 0;
@@ -485,7 +486,7 @@ int lwip_udp_query(uint32_t dst_ip, uint16_t dst_port, uint16_t src_port,
     if (!g_net_up) return -1;
 
     /* UDP 헤더 + 페이로드 조립 */
-    uint8_t pkt[8 + 512];
+    static uint8_t pkt[8 + 512];
     if (tx_len > 512) tx_len = 512;
     uint16_t total = (uint16_t)(8 + tx_len);
 

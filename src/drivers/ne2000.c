@@ -282,7 +282,7 @@ void ne2000_poll(void) {
         if (pkt_len > 4) pkt_len = (uint16_t)(pkt_len - 4);  /* CRC 제거 */
 
         if (pkt_len > 0 && pkt_len <= 1514 && g_rx_cb) {
-            uint8_t buf[1514];
+            static uint8_t buf[1514];
             uint16_t data_src = (uint16_t)(g_next_pkt * 256 + sizeof(hdr));
             /* 링 버퍼 wrap-around 처리 */
             uint16_t end_page  = (uint16_t)(g_next_pkt * 256 + sizeof(hdr) + pkt_len);
