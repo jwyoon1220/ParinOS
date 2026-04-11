@@ -24,10 +24,14 @@ CFLAGS := -ffreestanding -nostdlib -m32 -fno-pic \
           -I$(INC)
 
 # ── Library sources ────────────────────────────────────────────────────────
-LIB_C_SRCS := $(LIB_SRC)/crt0.c \
-              $(LIB_SRC)/stdio.c \
-              $(LIB_SRC)/stdlib.c \
-              $(LIB_SRC)/string.c
+LIB_C_SRCS := $(LIB_SRC)/crt0.c      \
+              $(LIB_SRC)/stdio.c      \
+              $(LIB_SRC)/stdlib.c     \
+              $(LIB_SRC)/string.c     \
+              $(LIB_SRC)/parin_str.c  \
+              $(LIB_SRC)/parin_fs.c   \
+              $(LIB_SRC)/parin_io.c   \
+              $(LIB_SRC)/parin_args.c
 LIB_C_OBJS := $(patsubst $(LIB_SRC)/%.c, $(BUILD)/%.o, $(LIB_C_SRCS))
 LIB_ASM_OBJ := $(BUILD)/syscall.o
 
