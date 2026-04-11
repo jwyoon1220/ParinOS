@@ -35,7 +35,7 @@ void init_idt() {
     outb(0x21, 0x20); outb(0xA1, 0x28);
     outb(0x21, 0x04); outb(0xA1, 0x02);
     outb(0x21, 0x01); outb(0xA1, 0x01);
-    outb(0x21, 0xFC); outb(0xA1, 0xFF); /* IRQ0(타이머)·IRQ1(키보드)만 허용, 나머지 마스크 */
+    outb(0x21, 0xFC); outb(0xA1, 0xFF); /* allow only IRQ0 (timer) and IRQ1 (keyboard); mask everything else */
 
     idt_ptr.limit = (sizeof(idt_entry_t) * 256) - 1;
     idt_ptr.base  = (uint32_t)&idt;
