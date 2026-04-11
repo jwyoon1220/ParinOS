@@ -219,6 +219,8 @@ int kcreate_thread(const char* name, void (*entry)(void), uint32_t stack_size) {
     threads[slot].stack            = stack;
     threads[slot].stack_size       = stack_size;
     threads[slot].sleep_until_tick = 0;
+    threads[slot].cr3              = 0;
+    threads[slot].user_brk         = 0;
     copy_name(threads[slot].name, name, sizeof(threads[slot].name));
 
     // 부모 프로세스에 스레드 등록
@@ -338,6 +340,8 @@ int kcreate_process(const char* name, void (*entry)(void)) {
     threads[tslot].stack            = stack;
     threads[tslot].stack_size       = DEFAULT_STACK_SIZE;
     threads[tslot].sleep_until_tick = 0;
+    threads[tslot].cr3              = 0;
+    threads[tslot].user_brk         = 0;
     copy_name(threads[tslot].name, name, sizeof(threads[tslot].name));
 
     // 프로세스에 메인 스레드 등록
@@ -566,6 +570,19 @@ uint32_t scheduler_tick(uint32_t current_esp) {
 void kthread_set_cr3(int tid, uint32_t cr3) {
     if (tid < 0 || tid >= KTHREAD_MAX) return;
     threads[tid].cr3 = cr3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  kthread_set_brk / kthread_get_brk
+// ─────────────────────────────────────────────────────────────────────────────
+void kthread_set_brk(int tid, uint32_t brk) {
+    if (tid < 0 || tid >= KTHREAD_MAX) return;
+    threads[tid].user_brk = brk;
+}
+
+uint32_t kthread_get_brk(int tid) {
+    if (tid < 0 || tid >= KTHREAD_MAX) return 0;
+    return threads[tid].user_brk;
 }
 
 void dump_multitasking_info(void) {

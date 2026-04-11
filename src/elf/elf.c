@@ -30,6 +30,8 @@ void* elf_load_file(File *file) {
     if (fat_file_read(file, &ehdr, sizeof(Elf32_Ehdr), &bytes_read) != FAT_ERR_NONE) return 0;
     if (!elf_check_supported(&ehdr)) return 0;
 
+    uint32_t max_seg_end = 0; /* ELF 세그먼트 최대 끝 주소 (초기 힙 brk 계산용) */
+
     for (int i = 0; i < ehdr.e_phnum; i++) {
         Elf32_Phdr phdr;
         uint32_t phdr_offset = ehdr.e_phoff + (i * ehdr.e_phentsize);
@@ -64,8 +66,20 @@ void* elf_load_file(File *file) {
                 uint32_t bss_size = phdr.p_memsz - phdr.p_filesz;
                 memset(bss_start, 0, bss_size);
             }
+
+            // 세그먼트 끝 주소 추적 (초기 힙 brk 계산용)
+            uint32_t seg_end = phdr.p_vaddr + phdr.p_memsz;
+            if (seg_end > max_seg_end) max_seg_end = seg_end;
         }
     }
+
+    // 초기 힙 브레이크 = 마지막 세그먼트 끝을 페이지 경계로 올림
+    // 이 주소부터 힙이 시작되며, sys_brk 호출 시 여기서부터 새 페이지를 할당
+    if (max_seg_end > 0) {
+        uint32_t init_brk = (max_seg_end + PAGE_SIZE - 1) & PAGE_MASK;
+        kthread_set_brk(kthread_id(), init_brk);
+    }
+
     return (void*)ehdr.e_entry;
 }
 

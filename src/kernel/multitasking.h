@@ -73,6 +73,7 @@ typedef struct {
     uint32_t        stack_size;       // 커널 스택 크기
     uint32_t        sleep_until_tick; // 이 틱 이후에 깨어남 (SLEEPING 상태 전용)
     uint32_t        cr3;              // 페이지 디렉토리 물리 주소 (0 = 부트 PD 사용)
+    uint32_t        user_brk;         // 유저 힙 브레이크 포인터 (0 = 미초기화)
 } kthread_t;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +210,23 @@ void kschedule(void);
  * @param cr3  페이지 디렉토리 물리 주소 (0 = 커널 부트 PD)
  */
 void kthread_set_cr3(int tid, uint32_t cr3);
+
+/**
+ * 스레드의 유저 힙 브레이크 포인터를 설정합니다.
+ * elf_load_file() 에서 ELF 로드 후 초기 힙 시작 주소를 등록할 때 사용합니다.
+ *
+ * @param tid  대상 스레드 ID
+ * @param brk  초기 힙 브레이크 주소 (페이지 정렬된 ELF 세그먼트 끝 주소)
+ */
+void kthread_set_brk(int tid, uint32_t brk);
+
+/**
+ * 스레드의 현재 유저 힙 브레이크 포인터를 반환합니다.
+ *
+ * @param tid  대상 스레드 ID
+ * @return     현재 brk 값 (0 = 미초기화)
+ */
+uint32_t kthread_get_brk(int tid);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  어셈블리(IRQ0 핸들러)에서 호출되는 내부 함수
