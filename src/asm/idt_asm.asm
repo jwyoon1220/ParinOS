@@ -84,8 +84,7 @@ irq0_handler:
 
     popa                ; 범용 레지스터 복구
     add esp, 8          ; int_no와 err_code 스택 정리
-    sti                 ; 인터럽트 다시 활성화
-    iret                ; 인터럽트 종료 및 복귀 (EIP, CS, EFLAGS 복원)
+    iret                ; 인터럽트 종료 및 복귀 (EIP, CS, EFLAGS 복원 — IF도 함께 복원됨)
 
 ; 3. 키보드 핸들러 (IRQ 1)
 irq1_handler:
