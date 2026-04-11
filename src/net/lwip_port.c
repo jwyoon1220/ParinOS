@@ -50,7 +50,32 @@ typedef struct {
 #define LWIP_SOCK_MAX 8
 static tcp_sock_t g_tcp[LWIP_SOCK_MAX];
 
-/* ── 체크섬 계산 ─────────────────────────────────────────────────── */
+/* ── UDP 수신 버퍼 (단발 쿼리/응답용) ───────────────────────────── */
+#define UDP_RXBUF_SIZE 512
+static uint8_t  g_udp_rx_buf[UDP_RXBUF_SIZE];
+static uint16_t g_udp_rx_len    = 0;   /* 0 = 비어있음 */
+static uint16_t g_udp_rx_port   = 0;   /* 수신을 기다리는 로컬 포트 */
+
+/* ── UDP 패킷 처리 ───────────────────────────────────────────────── */
+static void handle_udp(uint32_t src_ip, const uint8_t *data, uint16_t len) {
+    (void)src_ip;
+    if (len < 8) return;
+    uint16_t dst_port = (uint16_t)((data[2] << 8) | data[3]);
+    uint16_t udp_len  = (uint16_t)((data[4] << 8) | data[5]);
+    if (udp_len < 8 || udp_len > len) return;
+    uint16_t payload_len = (uint16_t)(udp_len - 8);
+
+    /* 등록된 로컬 포트로 온 패킷만 버퍼링 */
+    if (g_udp_rx_port != 0 && dst_port == g_udp_rx_port && g_udp_rx_len == 0) {
+        if (payload_len > UDP_RXBUF_SIZE)
+            payload_len = UDP_RXBUF_SIZE;
+        for (uint16_t i = 0; i < payload_len; i++)
+            g_udp_rx_buf[i] = data[8 + i];
+        g_udp_rx_len = payload_len;
+    }
+}
+
+
 static uint16_t ip_checksum(const void *data, int len) {
     const uint16_t *p = (const uint16_t *)data;
     uint32_t sum = 0;
@@ -356,6 +381,7 @@ static void handle_ip(const uint8_t *data, uint16_t len) {
     switch (iph->protocol) {
         case IP_PROTO_ICMP: handle_icmp(src_ip, payload, plen); break;
         case IP_PROTO_TCP:  handle_tcp(src_ip, payload, plen);  break;
+        case IP_PROTO_UDP:  handle_udp(src_ip, payload, plen);  break;
         default: break;
     }
 }
@@ -450,3 +476,55 @@ uint32_t lwip_get_ip(void) { return g_my_ip; }
 int lwip_arp_lookup(uint32_t ip, uint8_t *mac_out) {
     return arp_cache_lookup(ip, mac_out);
 }
+
+/* ── UDP 단발 쿼리/응답 ──────────────────────────────────────────── */
+int lwip_udp_query(uint32_t dst_ip, uint16_t dst_port, uint16_t src_port,
+                   const void *tx_buf, uint16_t tx_len,
+                   void *rx_buf, uint16_t rx_max,
+                   int timeout_polls) {
+    if (!g_net_up) return -1;
+
+    /* UDP 헤더 + 페이로드 조립 */
+    uint8_t pkt[8 + 512];
+    if (tx_len > 512) tx_len = 512;
+    uint16_t total = (uint16_t)(8 + tx_len);
+
+    pkt[0] = (uint8_t)(src_port >> 8);
+    pkt[1] = (uint8_t)(src_port & 0xFF);
+    pkt[2] = (uint8_t)(dst_port >> 8);
+    pkt[3] = (uint8_t)(dst_port & 0xFF);
+    pkt[4] = (uint8_t)(total >> 8);
+    pkt[5] = (uint8_t)(total & 0xFF);
+    pkt[6] = 0;   /* 체크섬 (선택적 — 0=미사용) */
+    pkt[7] = 0;
+
+    const uint8_t *d = (const uint8_t *)tx_buf;
+    for (uint16_t i = 0; i < tx_len; i++) pkt[8 + i] = d[i];
+
+    /* 수신 버퍼 등록 */
+    g_udp_rx_port = src_port;
+    g_udp_rx_len  = 0;
+
+    if (ip_send(dst_ip, IP_PROTO_UDP, pkt, total) < 0) {
+        g_udp_rx_port = 0;
+        return -1;
+    }
+
+    /* 응답 대기 */
+    for (int i = 0; i < timeout_polls; i++) {
+        ne2000_poll();
+        if (g_udp_rx_len > 0) {
+            uint16_t n = g_udp_rx_len;
+            if (n > rx_max) n = rx_max;
+            uint8_t *out = (uint8_t *)rx_buf;
+            for (uint16_t j = 0; j < n; j++) out[j] = g_udp_rx_buf[j];
+            g_udp_rx_port = 0;
+            g_udp_rx_len  = 0;
+            return (int)n;
+        }
+    }
+
+    g_udp_rx_port = 0;
+    return -1;   /* 타임아웃 */
+}
+

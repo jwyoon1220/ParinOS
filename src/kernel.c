@@ -20,6 +20,7 @@
 #include "elf/elf.h"
 #include "std/kstdio.h"
 #include "net/lwip_port.h"
+#include "net/sntp.h"
 
 #define megaOf(x) ((x) * 1024 * 1024)
 

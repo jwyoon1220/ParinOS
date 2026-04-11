@@ -153,4 +153,23 @@ uint32_t lwip_get_ip(void);
  */
 int lwip_arp_lookup(uint32_t ip, uint8_t *mac_out);
 
+/**
+ * UDP 데이터그램 전송 후 응답 수신 (단발 요청/응답 용).
+ *
+ * dst_ip    목적지 IPv4 (host byte order)
+ * dst_port  목적지 UDP 포트 (host byte order)
+ * src_port  출발지 UDP 포트 (host byte order)
+ * tx_buf    전송 페이로드
+ * tx_len    전송 바이트 수
+ * rx_buf    수신 버퍼
+ * rx_max    수신 버퍼 크기
+ * timeout_polls 최대 폴링 횟수 (1폴링 ≈ 1 NIC 프레임 처리)
+ *
+ * @return 수신된 바이트 수, -1 = 타임아웃/오류
+ */
+int lwip_udp_query(uint32_t dst_ip, uint16_t dst_port, uint16_t src_port,
+                   const void *tx_buf, uint16_t tx_len,
+                   void *rx_buf, uint16_t rx_max,
+                   int timeout_polls);
+
 #endif /* PARINOS_LWIP_PORT_H */
