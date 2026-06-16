@@ -18,6 +18,7 @@ idt_ptr_t   idt_ptr;
 extern void idt_load(uint32_t idt_ptr_addr);
 extern void irq0_handler();
 extern void irq1_handler();
+extern void isr13_handler();
 extern void isr14_handler();
 extern void syscall_handler();
 
@@ -40,6 +41,7 @@ void init_idt() {
     idt_ptr.limit = (sizeof(idt_entry_t) * 256) - 1;
     idt_ptr.base  = (uint32_t)&idt;
 
+    idt_set_gate(13, (uint32_t)isr13_handler, 0x08, 0x8E);
     idt_set_gate(14, (uint32_t)isr14_handler, 0x08, 0x8E);
 
     // IRQ0(타이머)와 IRQ1(키보드) 핸들러 등록

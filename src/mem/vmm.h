@@ -83,7 +83,7 @@ void vmm_invalidate_range(uint32_t start, uint32_t end);
 void vmm_flush_tlb(void);
 
 // 페이지 폴트 처리
-void page_fault_handler(uint32_t error_code);
+void page_fault_handler(uint32_t error_code, uint32_t fault_eip);
 
 // 디버깅 및 통계
 void vmm_dump_page_directory(void);

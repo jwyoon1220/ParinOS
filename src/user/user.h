@@ -83,8 +83,8 @@ typedef struct {
 // SYSENTER MSR 번호
 // ─────────────────────────────────────────────────────────────────────────────
 #define MSR_SYSENTER_CS  0x174
-#define MSR_SYSENTER_EIP 0x175
-#define MSR_SYSENTER_ESP 0x176
+#define MSR_SYSENTER_ESP 0x175  // IA32_SYSENTER_ESP (kernel stack pointer)
+#define MSR_SYSENTER_EIP 0x176  // IA32_SYSENTER_EIP (kernel entry point)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시스템 콜 핸들러 등록 (idt.c에서 int 0x80 벡터에 등록)
@@ -104,5 +104,6 @@ extern void sysenter_handler(void);
  * @return     시스템 콜 반환값 (EAX에 저장됨)
  */
 uint32_t syscall_dispatch(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx);
+void gp_fault_handler(uint32_t error_code);
 
 #endif // PARINOS_USER_H

@@ -7,6 +7,7 @@
 //
 
 #include "multitasking.h"
+#include "../drivers/serial.h"
 #include "../std/malloc.h"
 #include "../std/kstring.h"
 #include "../hal/vga.h"
@@ -17,7 +18,7 @@
 #include "tss.h"
 
 // SYSENTER ESP MSR (유저 스레드 전환 시 갱신)
-#define MSR_SYSENTER_ESP 0x176
+#define MSR_SYSENTER_ESP 0x175  // IA32_SYSENTER_ESP
 
 /* wrmsr 래퍼 — multitasking.c 내부 전용 */
 static inline void write_msr(uint32_t msr, uint32_t val) {
@@ -529,6 +530,8 @@ uint32_t scheduler_tick(uint32_t current_esp) {
     }
 
     // 9. 상태 전환
+    kprintf_serial("[SCHED] switch tid=%d->%d esp[next]=0x%x\n",
+                   current_tid, next, threads[next].esp);
     if (threads[current_tid].state == KTHREAD_RUNNING) {
         threads[current_tid].state = KTHREAD_READY;
     }

@@ -6,6 +6,7 @@
 #include "pmm.h"
 #include "mem.h"
 #include "../hal/vga.h"
+#include "../drivers/serial.h"
 #include "../std/kstring.h"
 #include "../kernel/kernel_status_manager.h"
 #include "../kernel/multitasking.h"
@@ -554,11 +555,12 @@ void vmm_switch_page_dir(uint32_t phys_pd) {
 // 페이지 폴트 핸들러
 // =============================================================================
 
-void page_fault_handler(uint32_t error_code) {
+void page_fault_handler(uint32_t error_code, uint32_t fault_eip) {
     uint32_t fault_address;
     __asm__ __volatile__("mov %%cr2, %0" : "=r"(fault_address));
 
     vmm_statistics.page_fault_count++;
+    kprintf_serial("[PF] addr=0x%x err=0x%x cpl=%d eip=0x%x\n", fault_address, error_code, error_code & 4, fault_eip);
 
     // 에러 코드 분석
     int present = !(error_code & 0x1);   // 1=페이지 없음, 0=보호 위반
