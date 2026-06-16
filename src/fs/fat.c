@@ -797,16 +797,22 @@ static int follow_path(Dir* dir, const char** path, Loc* loc)
     return FAT_ERR_PATH;
 
   dir->fat = find_fat_volume(str, len);
-  if (!dir->fat)
-    return FAT_ERR_PATH;
+  if (dir->fat) {
+    // Named volume match: consume the volume name component
+    str += len;
+    *path = str;
+  } else {
+    // Fallback: try root-mounted volume (empty name "")
+    dir->fat = find_fat_volume("", 0);
+    if (!dir->fat)
+      return FAT_ERR_PATH;
+    // Don't consume str - current component is a directory, not a volume name
+  }
 
   // Enter root by default (no entry points to it)
   dir_enter(dir, dir->fat->root_clust);
   dir_clust = dir->clust;
   dir_enterable = true;
-
-  str += len;
-  *path = str;
 
   for (;;)
   {

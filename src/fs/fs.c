@@ -45,7 +45,7 @@ void init_fs(void) {
         return;
     }
 
-    int err = fat_mount(&ahci_disk_ops, 0, &g_root_fat, "0");
+    int err = fat_mount(&ahci_disk_ops, 0, &g_root_fat, "");
 
     if (err == FAT_ERR_NONE) {
         kprintf("[FS] FAT32 successfully mounted on '/'\n");
