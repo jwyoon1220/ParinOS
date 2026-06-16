@@ -5,6 +5,7 @@
 
 #include "user.h"
 #include "../hal/vga.h"
+#include "../drivers/serial.h"
 #include "../kernel/multitasking.h"
 #include "../fs/vfs.h"
 #include "../elf/elf.h"
@@ -42,7 +43,11 @@ static uint32_t sys_write(uint32_t fd, uint32_t buf_vaddr, uint32_t count) {
     const char* s = (const char*)buf_vaddr;
 
     if (fd == 1 || fd == 2) {
-        // stdout / stderr → VGA에 출력
+        // stdout / stderr → 시리얼 + VGA 출력
+        kprintf_serial("[SYS_WRITE] fd=%d buf=0x%x count=%d\n", fd, buf_vaddr, count);
+        for (uint32_t i = 0; i < count; i++) {
+            write_serial(s[i]);
+        }
         for (uint32_t i = 0; i < count; i++) {
             lkputchar(s[i]);
         }
@@ -355,6 +360,30 @@ static uint32_t sys_gethost(uint32_t name_vaddr, uint32_t addr_vaddr) {
     uint32_t   *addr = (uint32_t *)addr_vaddr;
     int ret = ksocket_gethostbyname(name, addr);
     return (uint32_t)(int32_t)ret;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// General Protection Fault 핸들러 (ISR 13)
+// ─────────────────────────────────────────────────────────────────────────────
+void gp_fault_handler(uint32_t error_code) {
+    int user_fault = error_code & 0x4;
+    kprintf_serial("[GP] General Protection Fault: error_code=0x%x user=%d\n",
+                   error_code, user_fault ? 1 : 0);
+    if (user_fault) {
+        kprintf_serial("[GP] Terminating user process\n");
+        __asm__ volatile(
+            "mov $0x10, %%ax\n\t"
+            "mov %%ax, %%ds\n\t"
+            "mov %%ax, %%es\n\t"
+            "mov %%ax, %%fs\n\t"
+            "mov %%ax, %%gs\n\t"
+            : : : "eax"
+        );
+        kprocess_exit();
+        return;
+    }
+    kprintf_serial("[GP] Kernel GP fault — halting\n");
+    __asm__ volatile("cli; hlt");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

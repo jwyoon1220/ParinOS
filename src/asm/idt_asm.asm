@@ -90,13 +90,12 @@ irq0_handler:
 irq1_handler:
     ISR_COMMON keyboard_handler_main
 
-global isr14_handler
-extern page_fault_handler
+global isr13_handler
+extern gp_fault_handler
 
-; 🌟 Page Fault (ISR 14) 핸들러
-isr14_handler:
-    ; Page Fault는 CPU가 자동으로 에러 코드를 스택에 하나 더 push 합니다.
-    ; 따라서 일반 핸들러와 스택 구조가 조금 다릅니다.
+; General Protection Fault (ISR 13) 핸들러
+; CPU가 에러 코드를 자동으로 push 합니다.
+isr13_handler:
     pusha
     push ds
     push es
@@ -109,8 +108,47 @@ isr14_handler:
     mov fs, ax
     mov gs, ax
 
-    ; C 함수 호출
+    ; [esp+48] = CPU가 push한 error_code
+    mov eax, [esp + 48]
+    push eax               ; gp_fault_handler(error_code) 인자
+    call gp_fault_handler
+    add esp, 4
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popa
+
+    add esp, 4             ; CPU가 push한 에러 코드 제거
+    iretd
+
+global isr14_handler
+extern page_fault_handler
+
+; Page Fault (ISR 14) 핸들러
+; CPU가 에러 코드를 자동으로 push 합니다.
+isr14_handler:
+    pusha
+    push ds
+    push es
+    push fs
+    push gs
+
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; [esp+48] = CPU가 push한 error_code (올바른 값)
+    ; [esp+52] = CPU가 push한 EIP (폴트 발생 명령어 주소)
+    mov ebx, [esp + 52]
+    push ebx               ; page_fault_handler(error_code, fault_eip) 인자 2
+    mov eax, [esp + 52]    ; error_code now at esp+52 (shifted by ebx push)
+    push eax               ; page_fault_handler(error_code, fault_eip) 인자 1
     call page_fault_handler
+    add esp, 8
 
     pop gs
     pop fs
@@ -179,8 +217,8 @@ syscall_handler:
 ; ─────────────────────────────────────────────────────────────────────────────
 sysenter_handler:
     ; 유저 복귀 정보를 커널 스택에 저장
-    push ebp            ; 복귀 ESP (sysexit EDX 용)
-    push esi            ; 복귀 EIP (sysexit ECX 용)
+    push ebp            ; 복귀 ESP (sysexit ECX 용)
+    push esi            ; 복귀 EIP (sysexit EDX 용)
 
     ; 커널 데이터 세그먼트 로드
     push ds
@@ -209,8 +247,8 @@ sysenter_handler:
     pop es
     pop ds
 
-    ; sysexit 복귀: ECX = 유저 EIP, EDX = 유저 ESP
-    pop ecx             ; 복귀 EIP
-    pop edx             ; 복귀 ESP
+    ; sysexit 복귀: EDX = 유저 EIP, ECX = 유저 ESP (Intel sysexit 규약)
+    pop edx             ; 복귀 EIP (sysexit이 EDX를 EIP로 사용)
+    pop ecx             ; 복귀 ESP (sysexit이 ECX를 ESP로 사용)
 
     sysexit
