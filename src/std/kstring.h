@@ -26,10 +26,13 @@ char* strncat(char *dest, const char *src, int n);
 char* strcpy(char* dest, const char* src);
 
 char* strchr(const char *s, int c);
+char* strncpy(char *dest, const char *src, int n);
 uint32_t atoi_hex(const char *s);
 
-// 새로 추가
 int snprintf(char* buffer, size_t size, const char* format, ...);
+
+/* 문자열 공백 제거 — 끝에서 ' ', '\t', '\r', '\n' 를 제거 (in-place) */
+void kstrrtrim(char *s);
 
 #ifdef __cplusplus
 }

@@ -17,6 +17,18 @@ static int vesa_cy = 0;
 static uint8_t r_bg = 0, g_bg = 0, b_bg = 0;
 static int cursor_visible = 0;
 
+#define CURSOR_BLINK_MS 500
+static uint32_t cursor_blink_counter = 0;
+
+void vga_cursor_tick(void) {
+    if (!vesa_is_active()) return;
+    cursor_blink_counter++;
+    if (cursor_blink_counter < CURSOR_BLINK_MS) return;
+    cursor_blink_counter = 0;
+    cursor_visible ^= 1;
+    vga_draw_cursor(cursor_visible);
+}
+
 int vga_get_cx(void) { return vesa_cx; }
 void vga_set_cx(int cx) { vesa_cx = cx; }
 void vga_clear_current_line(void) {
@@ -66,10 +78,10 @@ static const uint8_t vga_rgb[16][3] = {
 // ─────────────────────────────────────────────────────────────────────────────
 void update_cursor(int x, int y) {
     uint16_t pos = y * 80 + x;
-    outb(0x3D4, 0x0F);
-    outb(0x3D5, (uint8_t)(pos & 0xFF));
-    outb(0x3D4, 0x0E);
-    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+    outb(VGA_CURSOR_PORT_CMD,  0x0F);
+    outb(VGA_CURSOR_PORT_DATA, (uint8_t)(pos & 0xFF));
+    outb(VGA_CURSOR_PORT_CMD,  0x0E);
+    outb(VGA_CURSOR_PORT_DATA, (uint8_t)((pos >> 8) & 0xFF));
 }
 
 /* ── MMX-accelerated VGA text scroll ─────────────────────────────────────────
@@ -80,9 +92,9 @@ void update_cursor(int x, int y) {
 static void vga_scroll() {
 
     /* --- move 24 rows up using MMX (8 bytes = 4 cells per iteration) --- */
-    uint8_t *dst = (uint8_t*)0xB8000;
-    uint8_t *src = dst + 80 * 2;          /* one row below */
-    int copy_bytes = 80 * 24 * 2;         /* 3840 bytes */
+    uint8_t *dst = VGA_MEMORY;
+    uint8_t *src = dst + VGA_ROW_BYTES;
+    int copy_bytes = VGA_ROW_BYTES * (VGA_HEIGHT - 1);
 
     __asm__ __volatile__ (
         "movl %0, %%ecx          \n" /* byte count */
@@ -110,8 +122,8 @@ static void vga_scroll() {
                      | ((uint64_t)blank << 32)
                      | ((uint64_t)blank << 48);
 
-    uint8_t *last_row = (uint8_t*)(0xB8000 + 80 * 24 * 2); /* 160 bytes */
-    int fill_bytes = 80 * 2;
+    uint8_t *last_row = VGA_MEMORY + VGA_ROW_BYTES * (VGA_HEIGHT - 1);
+    int fill_bytes = VGA_ROW_BYTES;
 
     __asm__ __volatile__ (
         "movl   %0, %%ecx          \n"
@@ -140,6 +152,22 @@ void vga_clear() {
         vesa_clear(0, 0, 0);
         vesa_cx = 0;
         vesa_cy = 0;
+        
+        // Draw initial cursor at (0, 0)
+        uint8_t fg_idx = default_color & 0x0Fu;
+        uint8_t bg_idx = (default_color >> 4) & 0x0Fu;
+        uint8_t r_fg = vga_rgb[fg_idx][0];
+        uint8_t g_fg = vga_rgb[fg_idx][1];
+        uint8_t b_fg = vga_rgb[fg_idx][2];
+        r_bg = vga_rgb[bg_idx][0];
+        g_bg = vga_rgb[bg_idx][1];
+        b_bg = vga_rgb[bg_idx][2];
+        font_draw_char(vesa_cx, vesa_cy, '_', r_fg, g_fg, b_fg, r_bg, g_bg, b_bg);
+
+        // Draw clock
+        extern void draw_clock(void);
+        draw_clock();
+
         kprintf_serial("[VESA] Screen Cleared\n");
         return;
     }
@@ -163,7 +191,7 @@ void vga_clear() {
         "jnz    3b                 \n"
         "emms                      \n"
         :
-        : "g"(fill_bytes), "g"((uintptr_t)0xB8000), "m"(pattern)
+        : "g"(fill_bytes), "g"((uintptr_t)VGA_MEMORY), "m"(pattern)
         : "ecx", "edi", "mm0", "memory"
     );
 
@@ -220,6 +248,11 @@ void lkputchar(char c) {
         g_bg = vga_rgb[bg_idx][1];
         b_bg = vga_rgb[bg_idx][2];
 
+        // Erase old cursor
+        vesa_fill_rect((uint32_t)vesa_cx, (uint32_t)vesa_cy,
+                       (uint32_t)fw, (uint32_t)fh,
+                       r_bg, g_bg, b_bg);
+
         if (cp == '\n') {
             vesa_cx = 0;
             vesa_cy += fh;
@@ -232,6 +265,8 @@ void lkputchar(char c) {
                                (uint32_t)fw, (uint32_t)fh,
                                r_bg, g_bg, b_bg);
             }
+            // Draw cursor at the new position
+            font_draw_char(vesa_cx, vesa_cy, '_', r_fg, g_fg, b_fg, r_bg, g_bg, b_bg);
             write_serial('\b'); write_serial(' '); write_serial('\b');
             return;
         } else {
@@ -251,7 +286,14 @@ void lkputchar(char c) {
         if (vesa_cy + fh > sh) {
             vesa_scroll_up((uint32_t)fh);
             vesa_cy -= fh;
+            
+            // Redraw clock after scroll
+            extern void draw_clock(void);
+            draw_clock();
         }
+
+        // Draw cursor at the new position
+        font_draw_char(vesa_cx, vesa_cy, '_', r_fg, g_fg, b_fg, r_bg, g_bg, b_bg);
 
         char out_c = (cp < 128) ? (char)cp : '?';
         if (out_c == '\n') write_serial('\r');
@@ -260,7 +302,7 @@ void lkputchar(char c) {
     }
 
     /* ── 기존 VGA 텍스트 모드 출력 경로 ── */
-    char* video_memory = (char*)0xB8000;
+    char* video_memory = (char*)VGA_MEMORY;
     char text_c = (cp < 128) ? (char)cp : '?';
     
     if (text_c == '\n') {
@@ -395,9 +437,6 @@ static void print_number(uint32_t value, int base, int is_signed, int width, cha
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 완전판 kprintf (stdio.h 수준)
-// ─────────────────────────────────────────────────────────────────────────────
 void kprintf(const char* format, ...) {
     va_list args;
     va_start(args, format);

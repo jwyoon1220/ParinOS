@@ -29,8 +29,8 @@ static inline void write_msr(uint32_t msr, uint32_t val) {
 //  내부 전역 변수
 // ─────────────────────────────────────────────────────────────────────────────
 
-static kthread_t  threads[KTHREAD_MAX];
-static kprocess_t processes[KPROCESS_MAX];
+kthread_t  threads[KTHREAD_MAX];
+kprocess_t processes[KPROCESS_MAX];
 
 static uint32_t current_tid    = 0; // 현재 실행 중인 스레드의 인덱스
 static uint32_t current_pid    = 0; // 현재 실행 중인 프로세스의 인덱스
@@ -420,7 +420,7 @@ int runAsync_named(const char* name, void (*func)(void)) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  kschedule  (협력적 양보)
 // ─────────────────────────────────────────────────────────────────────────────
-void kschedule(void) {
+inline void kschedule(void) {
     // 다음 타이머 인터럽트를 기다려 스케줄러가 전환하도록 함
     __asm__("sti; hlt");
 }
@@ -473,6 +473,15 @@ static void cleanup_dead_threads(uint32_t skip_tid)
 uint32_t scheduler_tick(uint32_t current_esp) {
     // 1. 틱 증가 (timer.h 에서 extern volatile uint32_t tick)
     tick++;
+
+    /* 커서 깜빡임 (vga.c 에서 500ms 주기 관리) */
+    vga_cursor_tick();
+
+    // 매 1초(1000ms)마다 우측 상단 시각 그래픽 업데이트
+    if (tick % 1000 == 0) {
+        extern void draw_clock(void);
+        draw_clock();
+    }
 
     // 2. PIC 마스터에 EOI 전송 (타이머 IRQ0)
     outb(0x20, 0x20);
@@ -530,8 +539,6 @@ uint32_t scheduler_tick(uint32_t current_esp) {
     }
 
     // 9. 상태 전환
-    kprintf_serial("[SCHED] switch tid=%d->%d esp[next]=0x%x\n",
-                   current_tid, next, threads[next].esp);
     if (threads[current_tid].state == KTHREAD_RUNNING) {
         threads[current_tid].state = KTHREAD_READY;
     }

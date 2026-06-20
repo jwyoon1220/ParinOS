@@ -68,6 +68,11 @@
 #define SYS_ACCEPT       306  // accept(sfd, &addr, &port)
 #define SYS_GETHOST      308  // gethostbyname(name, &addr)
 
+// ParinOS 디버그/유틸리티 시스템 콜
+#define SYS_CLEAR        400
+#define SYS_DUMP_HEAP    401
+#define SYS_DUMP_THREADS 402
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 유저 프로세스 디스크립터
 // ─────────────────────────────────────────────────────────────────────────────

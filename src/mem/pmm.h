@@ -21,6 +21,7 @@ typedef struct {
 } __attribute__((packed)) mmap_entry_t;
 
 void init_pmm();
+void pmm_reserve_region(uint32_t paddr, uint32_t size);
 
 // Page 할당/해제 (가상 메모리 관점)
 void* pmm_alloc_page();

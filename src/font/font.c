@@ -93,8 +93,8 @@ static float kf_acos(float x)          { (void)x; return 0.0f; }
 
 typedef enum { FONT_NONE, FONT_BIOS8x8, FONT_TTF } FontType;
 
-extern uint8_t _binary_FONT_TTF_start[];
-extern uint8_t _binary_FONT_TTF_end[];
+extern uint8_t _binary_font_ttf_start[];
+extern uint8_t _binary_font_ttf_end[];
 
 static FontType      g_font_type  = FONT_NONE;
 static uint8_t      *g_bios_font  = NULL;     /* BIOS 8×8 폰트 포인터 */
@@ -125,7 +125,7 @@ void font_init(void) {
 int font_load_embedded_ttf(int size) {
     if (size <= 0) return -1;
 
-    g_ttf_buf = _binary_FONT_TTF_start;
+    g_ttf_buf = _binary_font_ttf_start;
 
     /* stb_truetype 폰트 초기화 */
     int offset = stbtt_GetFontOffsetForIndex(g_ttf_buf, 0);
@@ -133,6 +133,8 @@ int font_load_embedded_ttf(int size) {
         g_ttf_buf = NULL;
         return -6;
     }
+    /* 잘못된 loca 엔트리로 인한 범위 초과 접근을 방지하기 위해 폰트 크기를 저장 */
+    g_ttf_info.data_size = (unsigned int)(_binary_font_ttf_end - _binary_font_ttf_start);
 
     g_ttf_scale = stbtt_ScaleForPixelHeight(&g_ttf_info, (float)size);
 
@@ -158,7 +160,7 @@ int font_load_ttf(const char *path, int size) {
     if (!path || size <= 0) return -1;
 
     /* 기존 TTF 버퍼 해제 (내장 폰트 심볼이 아닐 때만 해제) */
-    if (g_ttf_buf && g_ttf_buf != _binary_FONT_TTF_start) {
+    if (g_ttf_buf && g_ttf_buf != _binary_font_ttf_start) {
         kfree(g_ttf_buf);
     }
     g_ttf_buf = NULL;
@@ -199,6 +201,7 @@ int font_load_ttf(const char *path, int size) {
         g_ttf_buf = NULL;
         return -6;
     }
+    g_ttf_info.data_size = (unsigned int)file_size;
 
     g_ttf_scale = stbtt_ScaleForPixelHeight(&g_ttf_info, (float)size);
 
@@ -269,8 +272,12 @@ void font_draw_char(int px, int py, uint32_t codepoint,
         int bh = y1 - y0;
         if (bw <= 0 || bh <= 0) return;
 
-        uint8_t *bitmap = (uint8_t *)kmalloc((uint32_t)(bw * bh));
-        if (!bitmap) return;
+        uint8_t local_bitmap[2048];
+        uint8_t *bitmap = local_bitmap;
+        if (bw * bh > (int)sizeof(local_bitmap)) {
+            bitmap = (uint8_t *)kmalloc((uint32_t)(bw * bh));
+            if (!bitmap) return;
+        }
         memset(bitmap, 0, (uint32_t)(bw * bh));
 
         stbtt_MakeCodepointBitmap(&g_ttf_info, bitmap, bw, bh, bw,
@@ -302,6 +309,8 @@ void font_draw_char(int px, int py, uint32_t codepoint,
                 vesa_put_pixel((uint32_t)sx, (uint32_t)sy, r2, g2, b2);
             }
         }
-        kfree(bitmap);
+        if (bitmap != local_bitmap) {
+            kfree(bitmap);
+        }
     }
 }

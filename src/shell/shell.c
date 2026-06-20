@@ -13,7 +13,8 @@
 #include "../mem/vmm.h"
 #include "../elf/elf.h"
 #include "../std/kstd.h"
-#include "../drivers/speaker.h"
+#include "../sound/sound.h"
+#include "../sound/pc_speaker.h"
 #include "../font/font.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,12 +31,7 @@ static char cwd[256];
 // 내부 헬퍼
 // ─────────────────────────────────────────────────────────────────────────────
 
-static void trim_spaces(char* str) {
-    char* end;
-    end = str + strlen(str) - 1;
-    while (end > str && *end == ' ') end--;
-    *(end + 1) = '\0';
-}
+/* kstring.h의 kstrrtrim 사용 — 별도 구현 불필요 */
 
 /** 상대 경로를 cwd 기준으로 절대 경로로 변환.
  *  결과는 dst(최대 dst_size)에 저장됩니다.
@@ -228,7 +224,7 @@ static void cmd_playsound(const char* arg) {
     resolve_path(arg, path, sizeof(path));
 
     klog_info("Playing: %s\n", path);
-    if (!speaker_play_wav(path)) {
+    if (!snd_wav(path)) {
         klog_error("playsound: Failed to play '%s'\n", path);
     }
 }
@@ -314,8 +310,8 @@ void shell_init() {
     // 작업 디렉터리 초기화
     strcpy(cwd, "/0/");
 
-    // 스피커 초기화
-    speaker_init();
+    // 사운드 드라이버 등록
+    snd_register(pc_speaker_device());
 
     kprintf("\n");
     vga_set_color(VGA_COLOR_INFO);
@@ -366,7 +362,7 @@ void process_command() {
     else if (strncmp(cmd_buf, "cd ", 3) == 0) {
         char* arg = cmd_buf + 3;
         while (*arg == ' ') arg++;
-        trim_spaces(arg);
+        kstrrtrim(arg);
         cmd_cd(arg);
     }
 
@@ -377,7 +373,7 @@ void process_command() {
     else if (strncmp(cmd_buf, "ls ", 3) == 0) {
         char* arg = cmd_buf + 3;
         while (*arg == ' ') arg++;
-        trim_spaces(arg);
+        kstrrtrim(arg);
         cmd_ls(arg);
     }
 
@@ -385,7 +381,7 @@ void process_command() {
     else if (strncmp(cmd_buf, "playsound ", 10) == 0) {
         char* arg = cmd_buf + 10;
         while (*arg == ' ') arg++;
-        trim_spaces(arg);
+        kstrrtrim(arg);
         cmd_playsound(arg);
     }
 
@@ -393,7 +389,7 @@ void process_command() {
     else if (strncmp(cmd_buf, "run ", 4) == 0) {
         char* target_path = cmd_buf + 4;
         while (*target_path == ' ') target_path++;
-        trim_spaces(target_path);
+        kstrrtrim(target_path);
 
         if (strlen(target_path) > 0) {
             /* 경로와 인수 분리 */
@@ -471,8 +467,8 @@ void process_command() {
             char* src_cmd   = cmd_buf;
             char* dest_path = redir_ptr + 1;
             while (*dest_path == ' ') dest_path++;
-            trim_spaces(src_cmd);
-            trim_spaces(dest_path);
+            kstrrtrim(src_cmd);
+            kstrrtrim(dest_path);
 
             if (strncmp(src_cmd, "cat ", 4) == 0) {
                 char* src_rel = src_cmd + 4;
@@ -485,7 +481,7 @@ void process_command() {
         } else {
             char* src_rel = cmd_buf + 4;
             while (*src_rel == ' ') src_rel++;
-            trim_spaces(src_rel);
+            kstrrtrim(src_rel);
             char abs_path[256];
             resolve_path(src_rel, abs_path, sizeof(abs_path));
             fs_cat(abs_path);
@@ -500,9 +496,9 @@ void process_command() {
         if (redir_ptr != NULL) {
             *redir_ptr = '\0';
             char* dest_path = redir_ptr + 1;
-            trim_spaces(content);
+            kstrrtrim(content);
             while (*dest_path == ' ') dest_path++;
-            trim_spaces(dest_path);
+            kstrrtrim(dest_path);
             char abs_dst[256];
             resolve_path(dest_path, abs_dst, sizeof(abs_dst));
             fs_write_string(abs_dst, content);
@@ -525,7 +521,7 @@ void process_command() {
     else if (strncmp(cmd_buf, "cng_font ", 9) == 0) {
         char* arg = cmd_buf + 9;
         while (*arg == ' ') arg++;
-        trim_spaces(arg);
+        kstrrtrim(arg);
         cmd_cng_font(arg);
     }
 

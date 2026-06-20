@@ -26,44 +26,72 @@ global syscall3
 ; int syscall0(int num)
 ; ─────────────────────────────────────────────────────────────────────────────
 syscall0:
-    mov  eax, [esp+4]
-    mov  esi, [esp]
-    lea  ebp, [esp+4]
+    push ebp
+    push esi
+    push ebx
+    mov  eax, [esp+16]
+    mov  esi, .return
+    mov  ebp, esp
     sysenter
+.return:
+    pop  ebx
+    pop  esi
+    pop  ebp
     ret
 
 ; ─────────────────────────────────────────────────────────────────────────────
 ; int syscall1(int num, int a1)
 ; ─────────────────────────────────────────────────────────────────────────────
 syscall1:
-    mov  eax, [esp+4]
-    mov  ebx, [esp+8]
-    mov  esi, [esp]
-    lea  ebp, [esp+4]
+    push ebp
+    push esi
+    push ebx
+    mov  eax, [esp+16]
+    mov  ebx, [esp+20]
+    mov  esi, .return
+    mov  ebp, esp
     sysenter
+.return:
+    pop  ebx
+    pop  esi
+    pop  ebp
     ret
 
 ; ─────────────────────────────────────────────────────────────────────────────
 ; int syscall2(int num, int a1, int a2)
 ; ─────────────────────────────────────────────────────────────────────────────
 syscall2:
-    mov  eax, [esp+4]
-    mov  ebx, [esp+8]
-    mov  ecx, [esp+12]
-    mov  esi, [esp]
-    lea  ebp, [esp+4]
+    push ebp
+    push esi
+    push ebx
+    mov  eax, [esp+16]
+    mov  ebx, [esp+20]
+    mov  ecx, [esp+24]
+    mov  esi, .return
+    mov  ebp, esp
     sysenter
+.return:
+    pop  ebx
+    pop  esi
+    pop  ebp
     ret
 
 ; ─────────────────────────────────────────────────────────────────────────────
 ; int syscall3(int num, int a1, int a2, int a3)
 ; ─────────────────────────────────────────────────────────────────────────────
 syscall3:
-    mov  eax, [esp+4]
-    mov  ebx, [esp+8]
-    mov  ecx, [esp+12]
-    mov  edx, [esp+16]
-    mov  esi, [esp]
-    lea  ebp, [esp+4]
+    push ebp
+    push esi
+    push ebx
+    mov  eax, [esp+16]
+    mov  ebx, [esp+20]
+    mov  ecx, [esp+24]
+    mov  edx, [esp+28]
+    mov  esi, .return
+    mov  ebp, esp
     sysenter
+.return:
+    pop  ebx
+    pop  esi
+    pop  ebp
     ret

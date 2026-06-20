@@ -793,8 +793,14 @@ static int follow_path(Dir* dir, const char** path, Loc* loc)
   if (*str++ != '/')
     return FAT_ERR_PATH;
   len = subpath_len(str);
-  if (len == 0)
-    return FAT_ERR_PATH;
+  if (len == 0) {
+    dir->fat = find_fat_volume("", 0);
+    if (!dir->fat)
+      return FAT_ERR_PATH;
+    dir_enter(dir, dir->fat->root_clust);
+    *path = str;
+    return FAT_ERR_NONE;
+  }
 
   dir->fat = find_fat_volume(str, len);
   if (dir->fat) {

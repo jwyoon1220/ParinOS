@@ -193,3 +193,17 @@ int snprintf(char* buffer, size_t size, const char* format, ...) {
     return pos;
 }
 
+char *strncpy(char *dest, const char *src, int n) {
+    int i = 0;
+    while (i < n && src[i]) { dest[i] = src[i]; i++; }
+    while (i < n) dest[i++] = '\0';
+    return dest;
+}
+
+void kstrrtrim(char *s) {
+    int len = strlen(s);
+    while (len > 0 && (s[len-1] == ' '  || s[len-1] == '\t' ||
+                       s[len-1] == '\r'  || s[len-1] == '\n'))
+        s[--len] = '\0';
+}
+

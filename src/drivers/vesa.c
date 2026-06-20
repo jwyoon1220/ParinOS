@@ -122,23 +122,95 @@ void vesa_clear(uint8_t r, uint8_t g, uint8_t b) {
     }
 }
 
-/* ─── 사각형 채우기 ───────────────────────────────────────────────────────── */
-
+/* ─── 사각형 채우기 (인라인 어셈블리 최적화) ──────────────────────────────
+ * 32bpp: rep stosd  — 픽셀당 4바이트를 한 번에 채움
+ * 16bpp: rep stosw  — 픽셀당 2바이트
+ * 24bpp: C fallback  — 3바이트 정렬 불가로 stosd 부적합
+ */
 void vesa_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                     uint8_t r, uint8_t g, uint8_t b) {
-    for (uint32_t row = y; row < y + h && row < g_height; row++) {
-        for (uint32_t col = x; col < x + w && col < g_width; col++) {
-            vesa_put_pixel(col, row, r, g, b);
+    if (!g_vesa_active || w == 0 || h == 0) return;
+
+    /* 화면 경계 클리핑 */
+    if (x >= g_width || y >= g_height) return;
+    if (x + w > g_width)  w = g_width  - x;
+    if (y + h > g_height) h = g_height - y;
+
+    if (g_bpp == 32) {
+        uint32_t pixel_val = (0xFFu << 24)
+                           | ((uint32_t)r << g_red_pos)
+                           | ((uint32_t)g << g_green_pos)
+                           | ((uint32_t)b << g_blue_pos);
+
+        for (uint32_t row = y; row < y + h; row++) {
+            uint32_t *dst = (uint32_t *)(g_fb + row * g_pitch + x * 4u);
+            uint32_t  cnt = w;
+            __asm__ __volatile__ (
+                "rep stosl"
+                : "+D"(dst), "+c"(cnt)
+                : "a"(pixel_val)
+                : "memory"
+            );
+        }
+    } else if (g_bpp == 16) {
+        uint16_t pixel_val = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+
+        for (uint32_t row = y; row < y + h; row++) {
+            uint16_t *dst = (uint16_t *)(g_fb + row * g_pitch + x * 2u);
+            uint32_t  cnt = w;
+            __asm__ __volatile__ (
+                "rep stosw"
+                : "+D"(dst), "+c"(cnt)
+                : "a"((uint32_t)pixel_val)
+                : "memory"
+            );
+        }
+    } else {
+        /* 24bpp fallback */
+        for (uint32_t row = y; row < y + h; row++) {
+            uint8_t *p = g_fb + row * g_pitch + x * 3u;
+            for (uint32_t col = 0; col < w; col++, p += 3) {
+                p[g_red_pos   >> 3] = r;
+                p[g_green_pos >> 3] = g;
+                p[g_blue_pos  >> 3] = b;
+            }
         }
     }
 }
 
-/* ─── 스크롤 ──────────────────────────────────────────────────────────────── */
+/* ─── 스크롤 (SSE2 128비트 복사) ─────────────────────────────────────────── */
 
 void vesa_scroll_up(uint32_t fh) {
     if (!g_vesa_active || fh == 0 || fh >= g_height) return;
 
-    uint32_t copy_bytes = g_pitch * (g_height - fh);
-    memcpy(g_fb, g_fb + g_pitch * fh, copy_bytes);
-    memset(g_fb + copy_bytes, 0, g_pitch * fh);
+    uint32_t copy_bytes  = g_pitch * (g_height - fh);
+    uint32_t clear_bytes = g_pitch * fh;
+    uint8_t *src         = g_fb + g_pitch * fh;
+    uint8_t *dst         = g_fb;
+
+    /* SSE2 movdqu: 16바이트씩 복사 (비정렬 허용) */
+    uint32_t qwords = copy_bytes / 16;
+    uint32_t remain = copy_bytes % 16;
+
+    __asm__ __volatile__ (
+        "test %2, %2           \n"
+        "jz   1f               \n"
+        "0:                    \n"
+        "movdqu (%1), %%xmm0   \n"
+        "movdqu %%xmm0, (%0)   \n"
+        "addl $16, %0          \n"
+        "addl $16, %1          \n"
+        "decl %2               \n"
+        "jnz 0b                \n"
+        "1:                    \n"
+        : "+r"(dst), "+r"(src), "+r"(qwords)
+        :
+        : "xmm0", "memory"
+    );
+
+    /* 나머지 바이트 처리 */
+    for (uint32_t i = 0; i < remain; i++) dst[i] = src[i];
+
+    /* 하단 클리어 */
+    memset(g_fb + copy_bytes, 0, clear_bytes);
 }

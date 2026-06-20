@@ -4,9 +4,14 @@
 #include <stdint.h>
 #include <stdarg.h>
 
-#define VGA_WIDTH 80
+#define VGA_WIDTH  80
 #define VGA_HEIGHT 25
-#define VGA_MEMORY ((char*)0xB8000)
+
+#define VGA_MEMORY           ((uint8_t*)0xB8000)
+#define VGA_CURSOR_PORT_CMD  0x3D4   /* CRT Controller Address */
+#define VGA_CURSOR_PORT_DATA 0x3D5   /* CRT Controller Data    */
+#define VGA_ROW_BYTES        (VGA_WIDTH * 2)
+#define VGA_SCREEN_BYTES     (VGA_WIDTH * VGA_HEIGHT * 2)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VGA 색상 상수 (foreground / background nibble)
@@ -77,6 +82,7 @@ int vga_get_cx(void);
 void vga_set_cx(int cx);
 void vga_clear_current_line(void);
 void vga_draw_cursor(int show);
+void vga_cursor_tick(void); /* 매 타이머 틱(1ms)마다 호출 — 500ms 주기로 깜빡임 */
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Linux 스타일 컬러 로깅 함수

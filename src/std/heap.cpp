@@ -43,8 +43,13 @@ static uint32_t heap_grow(uint32_t pages)
             kprintf("[Heap] Out of physical memory (grew %u pages)\n", mapped);
             break;
         }
-        if (vmm_map_page(g_heap_top, reinterpret_cast<uint32_t>(frame), PAGE_RW)
-                != VMM_SUCCESS) {
+        vmm_result_t res = vmm_map_page(g_heap_top,
+                                         reinterpret_cast<uint32_t>(frame), PAGE_RW);
+        if (res == VMM_ERROR_ALREADY_MAPPED) {
+            // Virtual address is already identity-mapped to itself — reuse it.
+            // Free the new physical frame since we won't be installing it.
+            pmm_free_frame(frame);
+        } else if (res != VMM_SUCCESS) {
             pmm_free_frame(frame);
             kprintf("[Heap] VMM map failed at 0x%x\n", g_heap_top);
             break;
@@ -74,6 +79,10 @@ void init_heap(uint32_t start_vaddr, uint32_t initial_pages)
     g_allocator.init(
         reinterpret_cast<void*>(start_vaddr),
         static_cast<size_t>(initial_pages) * PAGE_SIZE);
+
+    // Tell PMM that these physical frames are in use so it won't hand them
+    // out to DMA or VMM allocators.
+    pmm_reserve_region(start_vaddr, initial_pages * PAGE_SIZE);
 
     kprintf("[Heap] TLSF heap at 0x%x (%u KB, O(1) alloc)\n",
             start_vaddr,

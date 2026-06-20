@@ -275,10 +275,24 @@ void keyboard_readline_feed(char c) {
         g_readline_len   = lidx;
         g_readline_ready = 1;
         lidx = 0;
+        lkputchar('\n');
     } else if (c == '\b') {
-        if (lidx > 0) lidx--;
+        if (lidx > 0) {
+            int start_idx = lidx - 1;
+            while (start_idx > 0 && (lbuf[start_idx] & 0xC0) == 0x80) {
+                start_idx--;
+            }
+            uint8_t lead = (uint8_t)lbuf[start_idx];
+            lidx = start_idx;
+            
+            lkputchar('\b');
+            if (lead >= 0xE0) { // Hangul (usually 3 bytes in UTF-8, takes 2 widths)
+                lkputchar('\b');
+            }
+        }
     } else if (lidx < 254) {
         lbuf[lidx++] = c;
+        lkputchar(c);
     }
 }
 

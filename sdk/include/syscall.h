@@ -35,6 +35,21 @@
 #define SYS_READDIR 201
 #define SYS_CLOSEDIR 202
 
+/* ParinOS network sockets */
+#define SYS_SOCKET   300
+#define SYS_CONNECT  301
+#define SYS_SEND     302
+#define SYS_RECV     303
+#define SYS_BIND     304
+#define SYS_LISTEN   305
+#define SYS_ACCEPT   306
+#define SYS_GETHOST  308
+
+/* ParinOS debug/utility */
+#define SYS_CLEAR        400
+#define SYS_DUMP_HEAP    401
+#define SYS_DUMP_THREADS 402
+
 /* ── File open flags (Linux-compatible) ──────────────────────────────────── */
 #define O_RDONLY  0
 #define O_WRONLY  1

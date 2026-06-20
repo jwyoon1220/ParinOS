@@ -519,9 +519,11 @@ uint32_t vmm_get_boot_dir_phys(void) {
     return (uint32_t)boot_page_directory;
 }
 
-// USER_PD_ENTRY: PD 엔트리 1 (가상 주소 0x400000-0x7FFFFF) 은 유저 프로그램
+// USER_PD_ENTRY: PD 엔트리 4 (가상 주소 0x1000000-0x13FFFFF) 는 유저 프로그램
 // 로드 영역이므로 프로세스마다 독립 페이지 테이블을 가져야 합니다.
-#define USER_PD_ENTRY 1
+// 주의: 커널 BSS/스택이 0x400000-0x5808C8 (PD entry 1) 에 있으므로
+//       PD entry 1 은 반드시 공유되어야 합니다.
+#define USER_PD_ENTRY 4
 
 uint32_t vmm_clone_kernel_dir(void) {
     // 새 페이지 디렉토리를 위한 물리 페이지 할당

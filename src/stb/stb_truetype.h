@@ -575,6 +575,7 @@ struct stbtt_fontinfo
    int loca,head,glyf,hhea,hmtx,kern,gpos,svg; // table locations as offset from start of .ttf
    int index_map;                     // a cmap mapping for our chosen character encoding
    int indexToLocFormat;              // format needed to map from glyph index to glyph
+   unsigned int data_size;            // total byte length of font data (for bounds checking)
 
    stbtt__buf cff;                    // cff font data
    stbtt__buf charstrings;            // the charstring index
@@ -1242,6 +1243,7 @@ static int stbtt_InitFont_internal(stbtt_fontinfo *info, unsigned char *data, in
    info->data = data;
    info->fontstart = fontstart;
    info->cff = stbtt__new_buf(NULL, 0);
+   info->data_size = 0; // will be set by caller if known
 
    cmap = stbtt__find_table(data, fontstart, "cmap");       // required
    info->loca = stbtt__find_table(data, fontstart, "loca"); // required
@@ -1470,6 +1472,9 @@ static int stbtt__GetGlyfOffset(const stbtt_fontinfo *info, int glyph_index)
       g1 = info->glyf + ttULONG (info->data + info->loca + glyph_index * 4);
       g2 = info->glyf + ttULONG (info->data + info->loca + glyph_index * 4 + 4);
    }
+
+   // Bounds check: reject offsets that exceed the known font data size
+   if (info->data_size > 0 && (unsigned int)g1 >= info->data_size) return -1;
 
    return g1==g2 ? -1 : g1; // if length is 0, return -1
 }

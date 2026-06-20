@@ -20,8 +20,8 @@ void exit(int code) {
  *
  * 반환값: 이동 전 브레이크 주소 (실패 시 (void *)-1)
  * ───────────────────────────────────────────────────────────────────────── */
-static unsigned char *g_heap_start = (unsigned char *)0; /* 힙 시작 주소 (0 = 미초기화) */
-static unsigned char *g_heap_brk   = (unsigned char *)0; /* 현재 브레이크 */
+static unsigned char *g_heap_start = 0; /* 힙 시작 주소 (0 = 미초기화) */
+static unsigned char *g_heap_brk   = 0; /* 현재 브레이크 */
 
 static void *sbrk_impl(int delta) {
     if (g_heap_start == (unsigned char *)0) {
@@ -40,11 +40,11 @@ static void *sbrk_impl(int delta) {
     /* 언더플로우 방지 */
     if (delta < 0 && new_brk > old_brk) return (void *)-1;
 
-    uint32_t got = (uint32_t)syscall1(SYS_BRK, (int)(uint32_t)(uintptr_t)new_brk);
-    if (got != (uint32_t)(uintptr_t)new_brk) return (void *)-1;
+    uint32_t got = (uint32_t)syscall1(SYS_BRK, (int)(uintptr_t)new_brk);
+    if (got != (uintptr_t)new_brk) return (void *)-1;
 
     g_heap_brk = new_brk;
-    return (void *)old_brk;
+    return old_brk;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ void *malloc(size_t size) {
     void *new_mem = sbrk_impl((int)chunksz);
     if (new_mem == (void *)-1) return (void *)0;
 
-    block_hdr_t *hdr = (block_hdr_t *)new_mem;
+    block_hdr_t *hdr = new_mem;
     hdr->size = size;
     hdr->used = 1;
 
@@ -112,11 +112,11 @@ void *malloc(size_t size) {
     size_t leftover = chunksz - need;
     if (leftover >= HDR_SIZE + MIN_SPLIT) {
         block_hdr_t *extra = (block_hdr_t *)((unsigned char *)new_mem + need);
-        extra->size = (unsigned int)(leftover - HDR_SIZE);
+        extra->size = leftover - HDR_SIZE;
         extra->used = 0;
     }
 
-    return (void *)((unsigned char *)new_mem + HDR_SIZE);
+    return (unsigned char *)new_mem + HDR_SIZE;
 }
 
 void free(void *ptr) {
@@ -146,7 +146,7 @@ void free(void *ptr) {
 
 void *calloc(size_t nmemb, size_t size) {
     /* 곱셈 오버플로우 방지 */
-    if (size != 0 && nmemb > SIZE_MAX / size) return (void *)0;
+    if (size != 0 && nmemb > SIZE_MAX / size) return NULL;
     size_t total = nmemb * size;
     void *ptr = malloc(total);
     if (ptr) memset(ptr, 0, total);
@@ -168,13 +168,13 @@ void *realloc(void *ptr, size_t size) {
             block_hdr_t *rest = (block_hdr_t *)((unsigned char *)ptr + size);
             rest->size = hdr->size - size - HDR_SIZE;
             rest->used = 0;
-            hdr->size  = (unsigned int)size;
+            hdr->size  = size;
         }
         return ptr;
     }
 
     void *newptr = malloc(size);
-    if (!newptr) return (void *)0;
+    if (!newptr) return 0;
     memcpy(newptr, ptr, hdr->size);
     free(ptr);
     return newptr;
@@ -190,8 +190,8 @@ int atoi(const char *s) {
     return sign * val;
 }
 
-long atol(const char *s) {
-    return (long)atoi(s);
+inline long atol(const char *s) {
+    return atoi(s);
 }
 
 unsigned long strtoul(const char *s, char **endptr, int base) {

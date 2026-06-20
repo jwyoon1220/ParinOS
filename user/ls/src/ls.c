@@ -26,7 +26,7 @@ int main(int argc, const char **argv) {
     struct dirent ent;
     while (readdir_r(fd, &ent) == 0) {
         if (ent.d_type == DT_DIR) {
-            printf("\033[34m%-24s\033[0m %10s  dir\n", ent.d_name, "-");
+            printf("%-24s %10s  dir\n", ent.d_name, "-");
         } else {
             printf("%-24s %10u  file\n", ent.d_name, ent.d_size);
         }

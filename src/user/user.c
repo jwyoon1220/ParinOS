@@ -12,6 +12,8 @@
 #include "../std/kstdio.h"
 #include "../mem/vmm.h"
 #include "../net/net.h"
+#include "../std/malloc.h"
+#include "../std/kstring.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 파일 디스크립터 테이블
@@ -44,7 +46,6 @@ static uint32_t sys_write(uint32_t fd, uint32_t buf_vaddr, uint32_t count) {
 
     if (fd == 1 || fd == 2) {
         // stdout / stderr → 시리얼 + VGA 출력
-        kprintf_serial("[SYS_WRITE] fd=%d buf=0x%x count=%d\n", fd, buf_vaddr, count);
         for (uint32_t i = 0; i < count; i++) {
             write_serial(s[i]);
         }
@@ -204,12 +205,127 @@ static uint32_t sys_brk(uint32_t addr) {
     return addr;
 }
 
-// SYS_EXEC(11): ELF 바이너리 실행 (경로, argc, argv)
+typedef struct {
+    char *path;
+    int argc;
+    char **argv;
+} exec_args_t;
+
+static exec_args_t g_exec_staging;
+static volatile int g_exec_staging_busy = 0;
+
+static void exec_thread_entry(void) {
+    char *path = g_exec_staging.path;
+    int argc = g_exec_staging.argc;
+    char **argv = g_exec_staging.argv;
+
+    g_exec_staging_busy = 0; // Release staging lock
+
+    elf_execute_in_ring3(path, argc, (const char **)argv);
+
+    // If it returns, exit process
+    kprocess_exit();
+}
+
 static uint32_t sys_exec(uint32_t path_vaddr, uint32_t argc, uint32_t argv_vaddr) {
     const char* path = (const char*)path_vaddr;
     const char** argv = (const char**)argv_vaddr;
-    int ret = elf_execute_with_args(path, (int)argc, argv);
-    return (uint32_t)ret;
+
+    if (path == NULL || argv == NULL || argc == 0 || argc > 32) {
+        return (uint32_t)-22; // -EINVAL
+    }
+
+    // 1. path 복사
+    char* kpath = (char*)kmalloc(256);
+    if (!kpath) return (uint32_t)-12; // -ENOMEM
+    strcpy(kpath, path);
+
+    // 2. argv 복사
+    char** kargv = (char**)kmalloc(sizeof(char*) * (argc + 1));
+    if (!kargv) {
+        kfree(kpath);
+        return (uint32_t)-12;
+    }
+
+    for (uint32_t i = 0; i < argc; i++) {
+        if (argv[i] == NULL) {
+            kargv[i] = NULL;
+            continue;
+        }
+        int len = strlen(argv[i]);
+        kargv[i] = (char*)kmalloc(len + 1);
+        if (!kargv[i]) {
+            for (uint32_t j = 0; j < i; j++) {
+                if (kargv[j]) kfree(kargv[j]);
+            }
+            kfree(kargv);
+            kfree(kpath);
+            return (uint32_t)-12;
+        }
+        strcpy(kargv[i], argv[i]);
+    }
+    kargv[argc] = NULL;
+
+    // 3. 파일 및 ELF 유효성 검사 (Ring 3 파괴 전 임시 검사)
+    File file;
+    if (fat_file_open(&file, kpath, FAT_READ) != FAT_ERR_NONE) {
+        for (uint32_t i = 0; i < argc; i++) {
+            if (kargv[i]) kfree(kargv[i]);
+        }
+        kfree(kargv);
+        kfree(kpath);
+        return (uint32_t)-2; // -ENOENT
+    }
+
+    Elf32_Ehdr ehdr;
+    int bytes_read = 0;
+    int read_ok = (fat_file_read(&file, &ehdr, sizeof(Elf32_Ehdr), &bytes_read) == FAT_ERR_NONE);
+    fat_file_close(&file);
+
+    if (!read_ok || !elf_check_supported(&ehdr)) {
+        for (uint32_t i = 0; i < argc; i++) {
+            if (kargv[i]) kfree(kargv[i]);
+        }
+        kfree(kargv);
+        kfree(kpath);
+        return (uint32_t)-8; // -ENOEXEC
+    }
+
+    // Acquire staging area lock
+    while (g_exec_staging_busy) {
+        kschedule();
+    }
+    g_exec_staging_busy = 1;
+    g_exec_staging.path = kpath;
+    g_exec_staging.argc = (int)argc;
+    g_exec_staging.argv = kargv;
+
+    int child_pid = kcreate_process(kpath, exec_thread_entry);
+    if (child_pid < 0) {
+        g_exec_staging_busy = 0;
+        for (uint32_t i = 0; i < argc; i++) {
+            if (kargv[i]) kfree(kargv[i]);
+        }
+        kfree(kargv);
+        kfree(kpath);
+        return (uint32_t)-1;
+    }
+
+    int child_tid = processes[child_pid].thread_ids[0];
+
+    // Wait for the child to release staging area AND terminate
+    while (g_exec_staging_busy || (threads[child_tid].state != KTHREAD_UNUSED && threads[child_tid].pid == (uint32_t)child_pid)) {
+        kschedule();
+    }
+
+    // Clean up copied memory in parent
+    for (uint32_t i = 0; i < argc; i++) {
+        if (kargv[i]) kfree(kargv[i]);
+    }
+    kfree(kargv);
+    kfree(kpath);
+
+    return 0;
 }
 
 // SYS_UNLINK(10): 파일 삭제
@@ -362,6 +478,26 @@ static uint32_t sys_gethost(uint32_t name_vaddr, uint32_t addr_vaddr) {
     return (uint32_t)(int32_t)ret;
 }
 
+// SYS_CLEAR(400): VESA 화면 클리어
+static uint32_t sys_clear(void) {
+    vga_clear();
+    return 0;
+}
+
+// SYS_DUMP_HEAP(401): 커널 힙 메모리 상태 덤프
+static uint32_t sys_dump_heap(void) {
+    dump_heap_stat();
+    return 0;
+}
+
+// SYS_DUMP_THREADS(402): 커널 멀티태스킹 프로세스/스레드 정보 덤프
+static uint32_t sys_dump_threads(void) {
+    extern void dump_multitasking_info(void);
+    dump_multitasking_info();
+    return 0;
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // General Protection Fault 핸들러 (ISR 13)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -415,8 +551,12 @@ uint32_t syscall_dispatch(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx
         case SYS_LISTEN:  return sys_listen(ebx, ecx);
         case SYS_ACCEPT:  return sys_accept(ebx, ecx, edx);
         case SYS_GETHOST: return sys_gethost(ebx, ecx);
+        case SYS_CLEAR:        return sys_clear();
+        case SYS_DUMP_HEAP:    return sys_dump_heap();
+        case SYS_DUMP_THREADS: return sys_dump_threads();
         default:
-            klog_warn("[SYSCALL] Unknown syscall: %d\n", (int)eax);
+            klog_warn("[SYSCALL] Unknown syscall: %d ebx=0x%x ecx=0x%x edx=0x%x\n",
+                      (int)eax, ebx, ecx, edx);
             return (uint32_t)-38; // -ENOSYS
     }
 }

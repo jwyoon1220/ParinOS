@@ -24,9 +24,10 @@ DISK_SRC   = ./disk_src
 DISK_SIZE_MB = 1024
 
 # --- 컴파일 플래그 ---
-CFLAGS   = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables -mmmx -msse2
+CFLAGS   = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables -mmmx -msse2 -mstackrealign
 CXXFLAGS = -ffreestanding -O2 -Wall -Wextra -m32 -fno-pic -fno-stack-protector \
            -fno-asynchronous-unwind-tables -fno-exceptions -fno-rtti \
+           -mmmx -msse2 -mstackrealign \
            -std=c++17 -I$(SRC_DIR)/cpp
 LDFLAGS        = -m elf_i386 -nostdlib -no-pie -T kernel.ld
 LDFLAGS_LOADER = -m elf_i386 -nostdlib -no-pie -T loader.ld
@@ -49,7 +50,7 @@ CXX_OBJECTS      = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,       $(CXX_SOU
 ASM_OBJECTS      = $(patsubst $(ASM_DIR)/%.asm, $(BUILD_DIR)/%_asm.o,  $(ASM_SOURCES))
 LOADER_C_OBJECTS = $(patsubst $(LOADER_DIR)/%.c, $(BUILD_DIR)/loader/%.o, $(LOADER_C_SOURCES))
 
-FONT_FILE  = $(DISK_SRC)/FONT.TTF
+FONT_FILE  = $(DISK_SRC)/font.ttf
 FONT_OBJECT= $(BUILD_DIR)/font_ttf.o
 
 LOADER_PAD_SIZE = 65536
@@ -121,7 +122,7 @@ $(BUILD_DIR)/loader.bin: $(BUILD_DIR)/loader_entry.o $(LOADER_C_OBJECTS)
 
 $(FONT_OBJECT): $(FONT_FILE)
 	@mkdir -p $(dir $@)
-	cd $(DISK_SRC) && $(OBJCOPY) -I binary -O elf32-i386 -B i386 FONT.TTF ../$@
+	cd $(DISK_SRC) && $(OBJCOPY) -I binary -O elf32-i386 -B i386 font.ttf ../$@
 
 $(BUILD_DIR)/kernel.elf: $(BUILD_DIR)/kernel_entry.o $(C_OBJECTS) $(CXX_OBJECTS) $(ASM_OBJECTS) $(FONT_OBJECT)
 	$(LD) $(LDFLAGS) $^ -o $@
@@ -140,15 +141,17 @@ $(IMAGE): $(BUILD_DIR)/boot.bin $(BUILD_DIR)/loader.bin $(BUILD_DIR)/kernel.elf
 	truncate -s 8388608 $@
 
 # --- 데이터 디스크 이미지 생성 (FAT32) ---
-# mtools를 사용하여 sudo 없이 수행
-$(DISK_IMG):
+# user 바이너리가 바뀌면 disk.img도 자동 재생성
+DISK_SRC_FILES := $(shell find $(DISK_SRC) -type f 2>/dev/null)
+
+$(DISK_IMG): user $(DISK_SRC_FILES)
 	@echo "Creating $(DISK_SIZE_MB)MB FAT32 disk image..."
 	@rm -f $(DISK_IMG)
 	dd if=/dev/zero of=$(DISK_IMG) bs=1M count=$(DISK_SIZE_MB)
 	mformat -i $(DISK_IMG) -F -v "PARIN_DATA" ::
 	@if [ -d $(DISK_SRC) ]; then \
 		echo "Copying files from $(DISK_SRC) to disk image..."; \
-		mcopy -i $(DISK_IMG) -s $(DISK_SRC)/* ::/; \
+		mcopy -i $(DISK_IMG) -s $(DISK_SRC)/* ::; \
 	fi
 
 # --- 유틸리티 타겟 ---
@@ -176,11 +179,16 @@ userprog: $(USERPROG_BINS)
 user:
 	$(MAKE) -C user all
 
+# 180번 라인 근처 예시
 headers:
-	@mkdir -p $(INC_DEST)
+	@mkdir -p $(INC_DEST)/user
 	@echo "Copying header files to $(INC_DEST)..."
+	# 1. 기존 find 명령은 유지 (소스 코드 내의 .h 파일들 복사)
 	@cd $(SRC_DIR) && find . -name "*.h" -exec cp --parents \{\} ../$(INC_DEST)/ \;
-	@cp -r include $(INC_DEST)/user
+
+	# 2. 문제의 cp -r include 부분을 수정
+	# 만약 include 폴더 내의 파일들을 include/user로 옮기고 싶은 것이라면:
+	@rsync -av --exclude='user' include/ $(INC_DEST)/user/
 	@echo "Done."
 
 run: all headers
@@ -191,9 +199,24 @@ run: all headers
 		-device ahci,id=ahci \
 		-device ide-hd,drive=disk0,bus=ahci.0 \
 		-nic user,model=ne2k_pci \
-		-serial stdio
+		-serial stdio \
+		-no-reboot \
+		-d int,cpu_reset -D /tmp/qemu_int.log 2>&1 | tee /tmp/qemu_out.log
+
+debug: all headers
+	@echo "Launching QEMU (debug mode)..."
+	qemu-system-x86_64 -m 256M -cpu qemu32,+mmx,+sse2 \
+		-drive file=$(IMAGE),format=raw,index=0,media=disk \
+		-drive file=$(DISK_IMG),format=raw,id=disk0,if=none \
+		-device ahci,id=ahci \
+		-device ide-hd,drive=disk0,bus=ahci.0 \
+		-nic user,model=ne2k_pci \
+		-serial stdio \
+		-d int,cpu_reset -D /tmp/qemu_int.log 2>&1 | tee /tmp/qemu_out.log; \
+	echo "--- Exception log (last 50 lines) ---"; \
+	tail -50 /tmp/qemu_int.log 2>/dev/null || true
 
 clean:
 	rm -rf $(BUILD_DIR) $(KERNEL_SYM) $(DISK_IMG) $(INC_DEST)
 
-.PHONY: all prep headers run clean userprog user
+.PHONY: all prep headers run debug clean userprog user

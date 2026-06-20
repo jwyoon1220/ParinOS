@@ -1,10 +1,10 @@
 #include "keyboard.h"
 #include "vga.h"
 #include "io.h"
-#include "../hangul_ime.h"
+#include "hangul_ime.h"
 
 static uint8_t key_states[128] = {0};
-extern void shell_input(char c); /* shell.c 또는 kernel.c에 구현할 함수 */
+extern void keyboard_readline_feed(char c); /* kstdio.c 에 구현됨 */
 
 /* 한영키 PS/2 스캔코드 (일부 키보드에서 0x72 or 확장 0xF1) */
 #define SCANCODE_HANGUL_KEY 0x72   /* Korean keyboard: 한/영 전환 */
@@ -48,10 +48,10 @@ void keyboard_handler_main() {
             if (flush != 0) {
                 char utf8[5];
                 int  n = unicode_to_utf8(flush, utf8);
-                for (int i = 0; i < n; i++) shell_input(utf8[i]);
+                for (int i = 0; i < n; i++) keyboard_readline_feed(utf8[i]);
             }
-            if (scancode == 0x4B) shell_input(17);
-            if (scancode == 0x4D) shell_input(18);
+            if (scancode == 0x4B) keyboard_readline_feed(17);
+            if (scancode == 0x4D) keyboard_readline_feed(18);
             outb(0x20, 0x20);
             return;
         }
@@ -62,7 +62,7 @@ void keyboard_handler_main() {
             if (scancode == 0x0E) {
                 uint32_t flush = hangul_ime_flush();
                 if (flush == 0) {
-                    shell_input('\b');
+                    keyboard_readline_feed('\b');
                 }
                 outb(0x20, 0x20);
                 return;
@@ -73,9 +73,9 @@ void keyboard_handler_main() {
                 if (flush != 0) {
                     char utf8[5];
                     int  n = unicode_to_utf8(flush, utf8);
-                    for (int i = 0; i < n; i++) shell_input(utf8[i]);
+                    for (int i = 0; i < n; i++) keyboard_readline_feed(utf8[i]);
                 }
-                shell_input('\n');
+                keyboard_readline_feed('\n');
                 outb(0x20, 0x20);
                 return;
             }
@@ -85,9 +85,9 @@ void keyboard_handler_main() {
                 if (flush != 0) {
                     char utf8[5];
                     int  n = unicode_to_utf8(flush, utf8);
-                    for (int i = 0; i < n; i++) shell_input(utf8[i]);
+                    for (int i = 0; i < n; i++) keyboard_readline_feed(utf8[i]);
                 }
-                shell_input(' ');
+                keyboard_readline_feed(' ');
                 outb(0x20, 0x20);
                 return;
             }
@@ -97,19 +97,19 @@ void keyboard_handler_main() {
             if (cp == 0xFFFFFFFF) {
                 /* IME 비활성 상태 (이론상 미발생) */
                 char key = shift ? kbd_us_shift[scancode] : kbd_us[scancode];
-                if (key) shell_input(key);
+                if (key) keyboard_readline_feed(key);
             } else if (cp != 0) {
                 /* 확정된 코드포인트 */
                 char utf8[5];
                 int  n = unicode_to_utf8(cp, utf8);
-                for (int i = 0; i < n; i++) shell_input(utf8[i]);
+                for (int i = 0; i < n; i++) keyboard_readline_feed(utf8[i]);
             }
             /* cp == 0: 아직 조합 중 */
         } else {
             /* 영문 모드 */
             char key = shift ? kbd_us_shift[scancode] : kbd_us[scancode];
             if (key != 0) {
-                shell_input(key);
+                keyboard_readline_feed(key);
             }
         }
     }

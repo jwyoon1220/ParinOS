@@ -7,9 +7,9 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "pmm.h"   /* PAGE_SIZE, FRAME_SIZE */
 
-// 페이지 크기 및 마스크
-#define PAGE_SIZE           4096
+// 페이지 주소 마스크
 #define PAGE_MASK           0xFFFFF000
 #define PAGE_OFFSET_MASK    0x00000FFF
 

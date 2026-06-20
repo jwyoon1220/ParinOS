@@ -9,8 +9,9 @@
 #include "../mem/vmm.h"
 
 #define AHCI_MAX_DEVICES 8
-#define SATA_SIG_ATA    0x00000101  // SATA 드라이브
-#define SATA_SIG_ATAPI  0xEB140101  // SATAPI 드라이브
+#define SATA_SIG_ATA    0x00000101  /* SATA drive  */
+#define SATA_SIG_ATAPI  0xEB140101  /* SATAPI drive */
+#define AHCI_SECTOR_SIZE 512        /* bytes per logical sector */
 
 static ahci_device_t ahci_devices[AHCI_MAX_DEVICES];
 static uint32_t ahci_device_count = 0;
@@ -165,7 +166,7 @@ static int ahci_init_port(hba_port_t* port, uint8_t port_num) {
             kprintf("[AHCI] Port %d: Detected %d sectors (%d MB)\n",
                    port_num,
                    (uint32_t)device->total_sectors,
-                   (uint32_t)(device->total_sectors * 512 / 1024 / 1024));
+                   (uint32_t)(device->total_sectors * AHCI_SECTOR_SIZE / 1024 / 1024));
         }
         pmm_free_frame(identify_buf);
     }
@@ -208,7 +209,7 @@ int ahci_read_sectors(ahci_device_t* device, uint64_t lba, uint16_t count, void*
     // PRD 설정
     cmd_tbl->prdt_entry[0].dba = (uint32_t)buffer;
     cmd_tbl->prdt_entry[0].dbau = 0;
-    cmd_tbl->prdt_entry[0].dbc = count * 512 - 1; // 512 bytes per sector
+    cmd_tbl->prdt_entry[0].dbc = count * AHCI_SECTOR_SIZE - 1; // 512 bytes per sector
     cmd_tbl->prdt_entry[0].i = 1;
 
     // 명령어 FIS 설정
@@ -271,7 +272,7 @@ int ahci_write_sectors(ahci_device_t* device, uint64_t lba, uint16_t count, void
     // PRD 설정
     cmd_tbl->prdt_entry[0].dba = (uint32_t)buffer;
     cmd_tbl->prdt_entry[0].dbau = 0;
-    cmd_tbl->prdt_entry[0].dbc = count * 512 - 1;
+    cmd_tbl->prdt_entry[0].dbc = count * AHCI_SECTOR_SIZE - 1;
     cmd_tbl->prdt_entry[0].i = 1;
 
     // 명령어 FIS 설정
@@ -376,7 +377,7 @@ void ahci_list_devices(void) {
             default:              type_name = "Unknown"; break;
         }
 
-        uint32_t size_mb = (uint32_t)(device->total_sectors * 512 / 1024 / 1024);
+        uint32_t size_mb = (uint32_t)(device->total_sectors * AHCI_SECTOR_SIZE / 1024 / 1024);
 
         kprintf("%d    %s %8d  %8d  %x\n",
                device->port_num,

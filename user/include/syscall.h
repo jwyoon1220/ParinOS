@@ -41,6 +41,10 @@
 #define SYS_ACCEPT   306
 #define SYS_GETHOST  308
 
+#define SYS_CLEAR    400
+#define SYS_DUMP_HEAP 401
+#define SYS_DUMP_THREADS 402
+
 /* ── 파일 열기 플래그 (Linux 호환) ─────────────────────────────────────── */
 #define O_RDONLY    0
 #define O_WRONLY    1

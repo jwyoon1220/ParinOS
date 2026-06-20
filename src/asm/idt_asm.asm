@@ -183,6 +183,8 @@ syscall_handler:
     mov fs, cx
     mov gs, cx
 
+    sti                 ; Enable interrupts for syscall execution
+
     ; 인자 전달: syscall_dispatch(eax, ebx, ecx, edx)
     push edx
     push ecx
@@ -192,6 +194,8 @@ syscall_handler:
     add esp, 16         ; 인자 4개 정리
 
     ; EAX = 반환값 (syscall_dispatch의 return value)
+
+    cli                 ; Disable interrupts before restoring registers
 
     pop gs
     pop fs
@@ -221,26 +225,33 @@ sysenter_handler:
     push esi            ; 복귀 EIP (sysexit EDX 용)
 
     ; 커널 데이터 세그먼트 로드
+    ; 모든 인자를 먼저 스택에 저장 — ax에 0x10을 쓰면 EAX 하위 16비트가 오염되므로
+    ; push eax를 ax 조작 전에 반드시 수행
     push ds
     push es
     push fs
     push gs
+    push edx            ; arg3
+    push ecx            ; arg2
+    push ebx            ; arg1
+    push eax            ; syscall number — ax 사용 전에 저장
 
-    mov cx, 0x10
-    mov ds, cx
-    mov es, cx
-    mov fs, cx
-    mov gs, cx
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    sti                 ; Enable interrupts for syscall execution
 
     ; syscall_dispatch(eax, ebx, ecx, edx) 호출
-    push edx
-    push ecx
-    push ebx
-    push eax
+    ; 스택 레이아웃: [esp]=eax, [esp+4]=ebx, [esp+8]=ecx, [esp+12]=edx
     call syscall_dispatch
     add esp, 16         ; 인자 4개 정리
 
     ; EAX = 반환값
+
+    cli                 ; Disable interrupts before restoring registers
 
     pop gs
     pop fs
@@ -248,7 +259,8 @@ sysenter_handler:
     pop ds
 
     ; sysexit 복귀: EDX = 유저 EIP, ECX = 유저 ESP (Intel sysexit 규약)
-    pop edx             ; 복귀 EIP (sysexit이 EDX를 EIP로 사용)
-    pop ecx             ; 복귀 ESP (sysexit이 ECX를 ESP로 사용)
+    pop edx             ; 복귀 EIP (원래 push esi 값)
+    pop ecx             ; 복귀 ESP (원래 push ebp 값)
 
+    sti                 ; Enable interrupts for user space!
     sysexit

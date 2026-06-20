@@ -10,7 +10,7 @@
 #include "drivers/ne2000.h"
 #include "std/malloc.h"
 #include "mem/vmm.h"
-#include "storge/ahci_adaptor.h"
+#include "storage/ahci_adaptor.h"
 #include "fs/fs.h"
 #include "kernel/multitasking.h"
 #include "kernel/fpu.h"
@@ -21,8 +21,8 @@
 #include "std/kstdio.h"
 #include "net/lwip_port.h"
 #include "net/sntp.h"
+#include "drivers/rtc.h"
 
-#define megaOf(x) ((x) * 1024 * 1024)
 
 /* ── 네트워크 초기화 (NE2000 + lwIP) ───────────────────────────────────── */
 static void init_network(void) {
@@ -70,6 +70,60 @@ static void launch_shell(void) {
  *
  * VESA / 폰트가 준비되지 않았거나 NTP 응답이 없으면 조용히 건너뜁니다.
  */
+static int32_t g_time_offset_seconds = 0;
+static int g_ntp_synced = 0;
+
+static int is_leap_year(uint32_t y) {
+    return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+}
+
+static const uint8_t days_in_month_table[12] = {
+    31,28,31,30,31,30,31,31,30,31,30,31
+};
+
+static uint32_t date_to_unix(uint32_t year, uint32_t month, uint32_t day, uint32_t hour, uint32_t min, uint32_t sec) {
+    uint32_t days = 0;
+    for (uint32_t y = 1970; y < year; y++) {
+        days += is_leap_year(y) ? 366 : 365;
+    }
+    for (uint32_t m = 1; m < month; m++) {
+        uint32_t dim = days_in_month_table[m - 1];
+        if (m == 2 && is_leap_year(year)) dim = 29;
+        days += dim;
+    }
+    days += (day - 1);
+    return days * 86400UL + hour * 3600UL + min * 60UL + sec;
+}
+
+static void unix_to_date(uint32_t ts, uint32_t *year, uint32_t *month, uint32_t *day, uint32_t *hour, uint32_t *min, uint32_t *sec) {
+    *sec  = ts % 60; ts /= 60;
+    *min  = ts % 60; ts /= 60;
+    *hour = ts % 24; ts /= 24;
+
+    uint32_t days = ts;
+    uint32_t y = 1970;
+    while (1) {
+        uint32_t dy = is_leap_year(y) ? 366 : 365;
+        if (days < dy) break;
+        days -= dy;
+        y++;
+    }
+    *year = y;
+
+    for (uint32_t m = 1; m <= 12; m++) {
+        uint32_t dim = days_in_month_table[m - 1];
+        if (m == 2 && is_leap_year(y)) dim = 29;
+        if (days < dim) {
+            *month = m;
+            *day   = days + 1;
+            return;
+        }
+        days -= dim;
+    }
+    *month = 12;
+    *day   = 31;
+}
+
 static void show_boot_time(void) {
     if (!vesa_is_active() || !font_is_ready()) return;
 
@@ -82,21 +136,33 @@ static void show_boot_time(void) {
     kprintf_serial("[TIME] %04d-%02d-%02d %02d:%02d:%02d UTC\n",
                    t.year, t.month, t.day, t.hour, t.min, t.sec);
 
+    // Calculate dynamic offset from local RTC
+    rtc_time_t rtc_now;
+    read_rtc(&rtc_now);
+
+    uint32_t ntp_unix = date_to_unix(t.year, t.month, t.day, t.hour, t.min, t.sec);
+    uint32_t rtc_unix = date_to_unix(rtc_now.year, rtc_now.month, rtc_now.day, rtc_now.hour, rtc_now.minute, rtc_now.second);
+
+    // KST = UTC + 9 hours
+    g_time_offset_seconds = (int32_t)(ntp_unix + 9 * 3600 - rtc_unix);
+    g_ntp_synced = 1;
+
+    uint32_t kst_y, kst_m, kst_d, kst_h, kst_min, kst_s;
+    unix_to_date(ntp_unix + 9 * 3600, &kst_y, &kst_m, &kst_d, &kst_h, &kst_min, &kst_s);
+
     /* ── 날짜/시간 문자열 조립 ─────────────────────────────────── */
     char date_str[32];  /* "2025-04-11" */
-    char time_str[32];  /* "09:32:05 UTC" */
+    char time_str[32];  /* "18:32:05 KST" */
 
-    /* ksnprintf 가 %02u 를 지원하지 않을 수 있으므로 직접 패딩 */
     ksnprintf(date_str, sizeof(date_str), "%04d-%02d-%02d",
-              (int)t.year, (int)t.month, (int)t.day);
-    ksnprintf(time_str, sizeof(time_str), "%02d:%02d:%02d UTC",
-              (int)t.hour, (int)t.min, (int)t.sec);
+              (int)kst_y, (int)kst_m, (int)kst_d);
+    ksnprintf(time_str, sizeof(time_str), "%02d:%02d:%02d KST",
+              (int)kst_h, (int)kst_min, (int)kst_s);
 
     int fw = font_get_width();
     int fh = font_get_height();
 
     uint32_t sw = vesa_get_width();
-    uint32_t sh = vesa_get_height();
 
     /* 날짜 문자열 길이 */
     int date_len = 0; { const char *p = date_str; while (*p++) date_len++; }
@@ -134,8 +200,76 @@ static void show_boot_time(void) {
                        0xFF, 0xFF, 0xFF,   /* 전경: 흰색 */
                        0x10, 0x18, 0x30);  /* 배경: 박스 색 */
     }
+}
 
-    (void)sh;  /* 현재 미사용 */
+void draw_clock(void) {
+    if (!vesa_is_active() || !font_is_ready()) return;
+
+    rtc_time_t t;
+    read_rtc(&t);
+
+    uint32_t y = t.year;
+    uint32_t m = t.month;
+    uint32_t d = t.day;
+    uint32_t h = t.hour;
+    uint32_t min = t.minute;
+    uint32_t s = t.second;
+
+    if (g_ntp_synced) {
+        uint32_t rtc_unix = date_to_unix(t.year, t.month, t.day, t.hour, t.minute, t.second);
+        uint32_t kst_unix = (uint32_t)((int32_t)rtc_unix + g_time_offset_seconds);
+        unix_to_date(kst_unix, &y, &m, &d, &h, &min, &s);
+    } else {
+        // Fallback: assume RTC is UTC and add 9 hours
+        uint32_t rtc_unix = date_to_unix(t.year, t.month, t.day, t.hour, t.minute, t.second);
+        uint32_t kst_unix = rtc_unix + 9 * 3600;
+        unix_to_date(kst_unix, &y, &m, &d, &h, &min, &s);
+    }
+
+    char date_str[32];  /* "2026-06-18" */
+    char time_str[32];  /* "00:00:04 KST" */
+
+    ksnprintf(date_str, sizeof(date_str), "%04d-%02d-%02d", (int)y, (int)m, (int)d);
+    ksnprintf(time_str, sizeof(time_str), "%02d:%02d:%02d KST", (int)h, (int)min, (int)s);
+
+    int fw = font_get_width();
+    int fh = font_get_height();
+
+    uint32_t sw = vesa_get_width();
+
+    int date_len = 0; { const char *p = date_str; while (*p++) date_len++; }
+    int time_len = 0; { const char *p = time_str; while (*p++) time_len++; }
+
+    int max_len  = date_len > time_len ? date_len : time_len;
+    int pad      = 12;
+    int box_w    = max_len * fw + pad * 2;
+    int box_h    = fh * 2 + pad * 3;
+
+    int box_x = (int)sw - box_w - 16;
+    int box_y = 16;
+    if (box_x < 0) box_x = 0;
+
+    /* 배경 박스 (어두운 색) */
+    vesa_fill_rect((uint32_t)box_x, (uint32_t)box_y,
+                   (uint32_t)box_w, (uint32_t)box_h,
+                   0x10, 0x18, 0x30);
+
+    /* 날짜 그리기 */
+    int tx = box_x + pad;
+    int ty = box_y + pad;
+    for (int i = 0; i < date_len; i++) {
+        font_draw_char(tx + i * fw, ty, (uint32_t)(unsigned char)date_str[i],
+                       0xAD, 0xD8, 0xFF,
+                       0x10, 0x18, 0x30);
+    }
+
+    /* 시간 그리기 */
+    ty += fh + pad;
+    for (int i = 0; i < time_len; i++) {
+        font_draw_char(tx + i * fw, ty, (uint32_t)(unsigned char)time_str[i],
+                       0xFF, 0xFF, 0xFF,
+                       0x10, 0x18, 0x30);
+    }
 }
 
 void kmain() {
@@ -159,7 +293,7 @@ void kmain() {
     // === 2단계: 메모리 관리 시스템 ===
     init_pmm();   // 물리 메모리 관리자
     init_vmm();   // 가상 메모리 관리자
-    init_heap(0x800000, 10);  // 커널 힙
+    init_heap(0x800000, 512);  // 커널 힙 (2MB 초기 풀)
     kprintf_serial("[BOOT] Memory OK\n");
 
     /* ── VMM 페이징 활성화 후 VESA 프레임버퍼 매핑 ──────────────────────── */

@@ -14,10 +14,9 @@
 extern "C" {
 #endif
 
-/* ── 출력 (vga.h 래퍼) ────────────────────────────────────────────────────── */
+/* ── 출력 ─────────────────────────────────────────────────────────────────── */
 
-/** kprintf — 커널 포맷 출력 (vga.h 의 kprintf 와 동일 프로토타입) */
-void kprintf(const char *fmt, ...);
+/* kprintf 는 vga.h 에서 선언/정의됨. kstdio.h 에는 확장 함수만 제공. */
 
 /** kvprintf — va_list 를 받는 포맷 출력 */
 void kvprintf(const char *fmt, va_list ap);
@@ -54,6 +53,7 @@ int ksscanf(const char *src, const char *fmt, ...);
  * @return 읽은 문자 수 (NUL 제외)
  */
 int keyboard_readline(char *buf, int maxlen);
+void keyboard_readline_feed(char c);
 
 #ifdef __cplusplus
 }

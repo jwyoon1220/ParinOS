@@ -11,6 +11,8 @@
 #include "stdlib.h"
 #include "string.h"
 #include "unistd.h"
+#include "syscall.h"
+
 
 #define CMD_MAX   256
 #define ARGV_MAX   32
@@ -20,7 +22,7 @@ static char g_cwd[256] = "/";
 
 /* ── 프롬프트 출력 ───────────────────────────────────────────────────── */
 static void print_prompt(void) {
-    printf("\033[32mParinOS\033[0m:\033[36m%s\033[0m$ ", g_cwd);
+    printf("user@ParinOS:%s$ ", g_cwd);
 }
 
 /* ── 문자열 앞뒤 공백 제거 ────────────────────────────────────────── */
@@ -47,30 +49,74 @@ static int parse_args(char *line, const char **argv, int max_argc) {
 
 /* ── 절대 경로 변환 ──────────────────────────────────────────────── */
 static void resolve_path(const char *rel, char *dst, int dst_size) {
+    char temp[512];
+
     if (rel[0] == '/') {
-        strncpy(dst, rel, (size_t)(dst_size - 1));
-        dst[dst_size - 1] = '\0';
-        return;
+        temp[0] = '\0';
+    } else {
+        strncpy(temp, g_cwd, sizeof(temp) - 1);
+        temp[sizeof(temp) - 1] = '\0';
     }
-    /* ".." 처리 */
-    if (rel[0] == '.' && rel[1] == '.' && (rel[2] == '\0' || rel[2] == '/')) {
-        int len = (int)strlen(g_cwd);
-        if (len > 1 && g_cwd[len-1] == '/') len--;
-        while (len > 0 && g_cwd[len-1] != '/') len--;
-        if (len == 0) len = 1;
-        strncpy(dst, g_cwd, (size_t)len);
-        dst[len] = '\0';
-        return;
+
+    /* Tokenize rel and build the path */
+    const char *p = rel;
+    while (*p) {
+        /* skip leading slashes */
+        while (*p == '/') p++;
+        if (!*p) break;
+
+        /* extract next token */
+        const char *start = p;
+        while (*p && *p != '/') p++;
+        int len = (int)(p - start);
+
+        if (len == 1 && start[0] == '.') {
+            /* do nothing */
+        } else if (len == 2 && start[0] == '.' && start[1] == '.') {
+            /* pop parent */
+            int tlen = (int)strlen(temp);
+            if (tlen > 1 && temp[tlen - 1] == '/') {
+                temp[--tlen] = '\0';
+            }
+            while (tlen > 0 && temp[tlen - 1] != '/') {
+                tlen--;
+            }
+            if (tlen == 0) {
+                temp[0] = '/';
+                temp[1] = '\0';
+            } else {
+                temp[tlen] = '\0';
+            }
+        } else {
+            /* append token */
+            int tlen = (int)strlen(temp);
+            if (tlen == 0 || temp[tlen - 1] != '/') {
+                if (tlen < (int)sizeof(temp) - 1) {
+                    temp[tlen++] = '/';
+                    temp[tlen] = '\0';
+                }
+            }
+            if (tlen + len < (int)sizeof(temp)) {
+                memcpy(temp + tlen, start, (size_t)len);
+                temp[tlen + len] = '\0';
+            }
+        }
     }
-    /* 상대 경로: cwd + rel */
-    int clen = (int)strlen(g_cwd);
-    strncpy(dst, g_cwd, (size_t)(dst_size - 1));
+
+    /* If empty, default to root "/" */
+    if (temp[0] == '\0') {
+        temp[0] = '/';
+        temp[1] = '\0';
+    }
+
+    /* Ensure trailing slash is removed if not root "/" */
+    int tlen = (int)strlen(temp);
+    if (tlen > 1 && temp[tlen - 1] == '/') {
+        temp[tlen - 1] = '\0';
+    }
+
+    strncpy(dst, temp, (size_t)(dst_size - 1));
     dst[dst_size - 1] = '\0';
-    if (clen > 0 && dst[clen-1] != '/' && clen < dst_size - 1) {
-        dst[clen++] = '/';
-        dst[clen] = '\0';
-    }
-    strncat(dst, rel, (size_t)(dst_size - clen - 1));
 }
 
 /* ── help 명령 ──────────────────────────────────────────────────────── */
@@ -86,6 +132,9 @@ static void cmd_help(void) {
     puts("  mkdir <path>      - 디렉터리 생성 (/bin/mkdir)");
     puts("  rm <file>         - 파일 삭제 (/bin/rm)");
     puts("  cp <src> <dst>    - 파일 복사 (/bin/cp)");
+    puts("  clear             - 화면 지우기 (cls)");
+    puts("  free              - 커널 힙 메모리 상태 덤프");
+    puts("  ps                - 커널 프로세스/스레드 정보 덤프");
     puts("  run <elf> [args]  - ELF 프로그램 실행");
     puts("  /<path> [args]    - 절대 경로로 직접 실행");
     puts("");
@@ -98,7 +147,100 @@ static void cmd_run(int argc, const char **argv) {
     char abs_path[256];
     resolve_path(argv[0], abs_path, sizeof(abs_path));
 
-    int ret = execve(abs_path, argc, argv);
+    /* 인자 경로 변환을 위한 로컬 버퍼들 */
+    char resolved_args[ARGV_MAX][256];
+    const char *new_argv[ARGV_MAX];
+    int new_argc = argc;
+
+    new_argv[0] = abs_path;
+
+    const char *prog_name = argv[0];
+    const char *last_slash = strrchr(prog_name, '/');
+    if (last_slash) prog_name = last_slash + 1;
+
+    if (strcmp(prog_name, "ls") == 0) {
+        if (argc == 1) {
+            strncpy(resolved_args[1], g_cwd, sizeof(resolved_args[1]) - 1);
+            resolved_args[1][sizeof(resolved_args[1]) - 1] = '\0';
+            new_argv[1] = resolved_args[1];
+            new_argv[2] = NULL;
+            new_argc = 2;
+        } else {
+            resolve_path(argv[1], resolved_args[1], sizeof(resolved_args[1]));
+            new_argv[1] = resolved_args[1];
+            for (int i = 2; i < argc; i++) {
+                new_argv[i] = argv[i];
+            }
+            new_argv[argc] = NULL;
+        }
+    } else if (strcmp(prog_name, "cat") == 0 || strcmp(prog_name, "rm") == 0 || strcmp(prog_name, "mkdir") == 0) {
+        for (int i = 1; i < argc; i++) {
+            resolve_path(argv[i], resolved_args[i], sizeof(resolved_args[i]));
+            new_argv[i] = resolved_args[i];
+        }
+        new_argv[argc] = NULL;
+    } else if (strcmp(prog_name, "cp") == 0) {
+        if (argc > 1) {
+            resolve_path(argv[1], resolved_args[1], sizeof(resolved_args[1]));
+            new_argv[1] = resolved_args[1];
+        }
+        if (argc > 2) {
+            resolve_path(argv[2], resolved_args[2], sizeof(resolved_args[2]));
+            new_argv[2] = resolved_args[2];
+        }
+        for (int i = 3; i < argc; i++) {
+            new_argv[i] = argv[i];
+        }
+        new_argv[argc] = NULL;
+    } else if (strcmp(prog_name, "gzip") == 0) {
+        if (argc > 1) {
+            if (argv[1][0] == '-') {
+                new_argv[1] = argv[1];
+                if (argc > 2) {
+                    resolve_path(argv[2], resolved_args[2], sizeof(resolved_args[2]));
+                    new_argv[2] = resolved_args[2];
+                }
+                for (int i = 3; i < argc; i++) {
+                    new_argv[i] = argv[i];
+                }
+            } else {
+                resolve_path(argv[1], resolved_args[1], sizeof(resolved_args[1]));
+                new_argv[1] = resolved_args[1];
+                for (int i = 2; i < argc; i++) {
+                    new_argv[i] = argv[i];
+                }
+            }
+        }
+        new_argv[argc] = NULL;
+    } else if (strcmp(prog_name, "jvm") == 0) {
+        if (argc > 1) {
+            if (strcmp(argv[1], "-jar") == 0 || strcmp(argv[1], "-jl") == 0) {
+                new_argv[1] = argv[1];
+                if (argc > 2) {
+                    resolve_path(argv[2], resolved_args[2], sizeof(resolved_args[2]));
+                    new_argv[2] = resolved_args[2];
+                }
+                for (int i = 3; i < argc; i++) {
+                    new_argv[i] = argv[i];
+                }
+            } else {
+                resolve_path(argv[1], resolved_args[1], sizeof(resolved_args[1]));
+                new_argv[1] = resolved_args[1];
+                for (int i = 2; i < argc; i++) {
+                    new_argv[i] = argv[i];
+                }
+            }
+        }
+        new_argv[argc] = NULL;
+    } else {
+        /* 그 외 프로그램: 인수를 그대로 전달 */
+        for (int i = 1; i < argc; i++) {
+            new_argv[i] = argv[i];
+        }
+        new_argv[argc] = NULL;
+    }
+
+    int ret = execve(abs_path, new_argc, new_argv);
     if (ret != 0) {
         fprintf(stderr, "실행 실패: %s\n", abs_path);
     }
@@ -136,6 +278,12 @@ int main(int argc, const char **argv) {
             exit(code);
         } else if (strcmp(cmd, "help") == 0) {
             cmd_help();
+        } else if (strcmp(cmd, "clear") == 0 || strcmp(cmd, "cls") == 0) {
+            syscall0(SYS_CLEAR);
+        } else if (strcmp(cmd, "free") == 0) {
+            syscall0(SYS_DUMP_HEAP);
+        } else if (strcmp(cmd, "ps") == 0) {
+            syscall0(SYS_DUMP_THREADS);
         } else if (strcmp(cmd, "echo") == 0) {
             for (int i = 1; i < cmd_argc; i++) {
                 if (i > 1) putchar(' ');

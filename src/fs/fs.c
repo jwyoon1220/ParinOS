@@ -1,12 +1,10 @@
-//
-// Created by jwyoo on 26. 3. 10..
-//
-
 #include "fs.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 #include "fat.h"
+#include "vfs.h"
+#include "vfs_fat.h"
 #include "../drivers/ahci.h"
 #include "../hal/vga.h"
 #include "../util/util.h"
@@ -40,6 +38,8 @@ static DiskOps ahci_disk_ops = {
 void init_fs(void) {
     kprintf("[FS] Initializing FAT32 File System...\n");
 
+    vfs_init();
+
     if (ahci_get_device_count() == 0) {
         kprintf("[FS] Error: No AHCI devices found.\n");
         return;
@@ -50,6 +50,13 @@ void init_fs(void) {
     if (err == FAT_ERR_NONE) {
         kprintf("[FS] FAT32 successfully mounted on '/'\n");
         kprintf("[FS] OEM Name: %s\n", g_root_fat.name);
+
+        int vfs_err = vfs_fat_register(&g_root_fat, "/");
+        if (vfs_err == VFS_OK) {
+            kprintf("[VFS] FAT32 successfully registered to VFS on '/'\n");
+        } else {
+            kprintf("[VFS] Failed to register FAT32 to VFS. Error: %d\n", vfs_err);
+        }
     } else {
         kprintf("[FS] Failed to mount FAT32. Error: %s\n", fat_get_error(err));
     }
